@@ -18,3 +18,8 @@ jobs:
         uses: sbt/setup-sbt@v1
       - name: Build and Test
         run: sbt "scalafmtCheckAll; scalafixAll --check; +test"
+      - name: Update Dependency Graph
+        if: github.ref == 'refs/heads/master'
+        uses: scalacenter/sbt-dependency-submission@v3
+        with:
+          configs-ignore: scala-doc-tool
