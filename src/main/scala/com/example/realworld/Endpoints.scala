@@ -1,9 +1,13 @@
 package com.example.realworld
 
 import cats.effect.Async
+import com.example.realworld.model.NewUserRequest
+import com.example.realworld.model.User
+import com.example.realworld.model.UserResponse
 import org.http4s.HttpRoutes
 import sttp.model.StatusCode
 import sttp.tapir.*
+import sttp.tapir.json.jsoniter.*
 import sttp.tapir.server.http4s.Http4sServerInterpreter
 import sttp.tapir.server.http4s.Http4sServerOptions
 import sttp.tapir.server.interceptor.cors.CORSConfig
@@ -17,9 +21,27 @@ case class Endpoints[F[_]: Async]():
     .description("Liveness probe")
     .serverLogicPure[F](_ => Right(()))
 
+  private def registerUserEndpoint = endpoint.post
+    .in("api" / "users")
+    .in(jsonBody[NewUserRequest])
+    .out(jsonBody[UserResponse])
+    .description("Register a new user")
+    .tag("User and Authentication")
+    .serverLogicSuccess[F] { request =>
+      val registered = User(
+        email = request.user.email,
+        token = "jwt.token.here",
+        username = request.user.username,
+        bio = None,
+        image = None
+      )
+      Async[F].pure(UserResponse(registered))
+    }
+
   def routes: HttpRoutes[F] =
     val serverEndpoints = List(
-      livenessEndpoint
+      livenessEndpoint,
+      registerUserEndpoint
     )
 
     val swaggerEndpoints =
