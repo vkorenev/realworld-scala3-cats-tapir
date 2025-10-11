@@ -2,6 +2,7 @@ package com.example.realworld
 
 import cats.effect.Async
 import cats.syntax.functor.*
+import com.example.realworld.model.LoginUserRequest
 import com.example.realworld.model.NewUserRequest
 import com.example.realworld.model.UserResponse
 import com.example.realworld.repository.UserRepository
@@ -22,6 +23,20 @@ case class Endpoints[F[_]: Async](userRepository: UserRepository[F]):
     .description("Liveness probe")
     .serverLogicPure[F](_ => Right(()))
 
+  private def loginUserEndpoint = endpoint.post
+    .in("api" / "users" / "login")
+    .in(jsonBody[LoginUserRequest])
+    .out(jsonBody[UserResponse])
+    .errorOut(statusCode(StatusCode.Unauthorized))
+    .description("Authenticate an existing user")
+    .tag("User and Authentication")
+    .serverLogic[F] { request =>
+      userRepository.authenticate(request.user.email, request.user.password).map {
+        case Some(user) => Right(UserResponse(user))
+        case None => Left(())
+      }
+    }
+
   private def registerUserEndpoint = endpoint.post
     .in("api" / "users")
     .in(jsonBody[NewUserRequest])
@@ -37,6 +52,7 @@ case class Endpoints[F[_]: Async](userRepository: UserRepository[F]):
   def routes: HttpRoutes[F] =
     val serverEndpoints = List(
       livenessEndpoint,
+      loginUserEndpoint,
       registerUserEndpoint
     )
 

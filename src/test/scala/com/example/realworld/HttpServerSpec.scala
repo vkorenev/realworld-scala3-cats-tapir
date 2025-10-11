@@ -70,3 +70,48 @@ class HttpServerSpec extends CatsEffectSuite:
           assertEquals(decoded, expected)
         }
       }
+
+  test("login user endpoint returns existing user payload"):
+    val httpApp = httpAppFixture()
+    val registerPayload =
+      """{"user":{"username":"Alice","email":"alice@example.com","password":"wonderland"}}"""
+    val loginPayload =
+      """{"user":{"email":"alice@example.com","password":"wonderland"}}"""
+
+    val registerRequest = Request[IO](
+      Method.POST,
+      uri"/api/users",
+      headers = Headers(`Content-Type`(MediaType.application.json)),
+      body = Stream.emits(registerPayload.getBytes(StandardCharsets.UTF_8)).covary[IO]
+    )
+
+    val loginRequest = Request[IO](
+      Method.POST,
+      uri"/api/users/login",
+      headers = Headers(`Content-Type`(MediaType.application.json)),
+      body = Stream.emits(loginPayload.getBytes(StandardCharsets.UTF_8)).covary[IO]
+    )
+
+    val expectedUser = User(
+      email = "alice@example.com",
+      token = "jwt.token.here",
+      username = "Alice",
+      bio = None,
+      image = None
+    )
+
+    httpApp
+      .run(registerRequest)
+      .flatMap { response =>
+        assertEquals(response.status, Status.Ok)
+        response.as[String].map(_ => ())
+      } *> httpApp
+      .run(loginRequest)
+      .flatMap { response =>
+        assertEquals(response.status, Status.Ok)
+        response.as[String].map { body =>
+          val decoded = readFromString[UserResponse](body)
+          val expected = UserResponse(expectedUser)
+          assertEquals(decoded, expected)
+        }
+      }

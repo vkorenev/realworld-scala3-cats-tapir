@@ -10,11 +10,23 @@ object NewUser:
   given JsonValueCodec[NewUser] = JsonCodecMaker.make
   given Schema[NewUser] = Schema.derived
 
+final case class LoginUser(email: String, password: String)
+
+object LoginUser:
+  given JsonValueCodec[LoginUser] = JsonCodecMaker.make
+  given Schema[LoginUser] = Schema.derived
+
 final case class NewUserRequest(user: NewUser)
 
 object NewUserRequest:
   given JsonValueCodec[NewUserRequest] = JsonCodecMaker.make
   given Schema[NewUserRequest] = Schema.derived
+
+final case class LoginUserRequest(user: LoginUser)
+
+object LoginUserRequest:
+  given JsonValueCodec[LoginUserRequest] = JsonCodecMaker.make
+  given Schema[LoginUserRequest] = Schema.derived
 
 final case class User(
     email: String,
