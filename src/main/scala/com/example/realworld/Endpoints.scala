@@ -1,9 +1,10 @@
 package com.example.realworld
 
 import cats.effect.Async
+import cats.syntax.functor.*
 import com.example.realworld.model.NewUserRequest
-import com.example.realworld.model.User
 import com.example.realworld.model.UserResponse
+import com.example.realworld.repository.UserRepository
 import org.http4s.HttpRoutes
 import sttp.model.StatusCode
 import sttp.tapir.*
@@ -14,7 +15,7 @@ import sttp.tapir.server.interceptor.cors.CORSConfig
 import sttp.tapir.server.interceptor.cors.CORSInterceptor
 import sttp.tapir.swagger.bundle.SwaggerInterpreter
 
-case class Endpoints[F[_]: Async]():
+case class Endpoints[F[_]: Async](userRepository: UserRepository[F]):
   private def livenessEndpoint = endpoint.get
     .in("__health" / "liveness")
     .out(statusCode(StatusCode.NoContent))
@@ -28,14 +29,9 @@ case class Endpoints[F[_]: Async]():
     .description("Register a new user")
     .tag("User and Authentication")
     .serverLogicSuccess[F] { request =>
-      val registered = User(
-        email = request.user.email,
-        token = "jwt.token.here",
-        username = request.user.username,
-        bio = None,
-        image = None
-      )
-      Async[F].pure(UserResponse(registered))
+      userRepository
+        .create(request.user)
+        .map(UserResponse.apply)
     }
 
   def routes: HttpRoutes[F] =

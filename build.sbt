@@ -14,6 +14,8 @@ val munitVersion = "1.2.0"
 val munitCatsEffectVersion = "2.1.0"
 val tapirVersion = "1.11.48"
 val jsoniterScalaVersion = "2.38.3"
+val doobieVersion = "1.0.0-RC10"
+val h2Version = "2.4.240"
 
 lazy val log4j2Bom = com.here.bom.Bom(
   "org.apache.logging.log4j" % "log4j-bom" % log4j2Version
@@ -33,6 +35,7 @@ lazy val root = (project in file("."))
       "co.fs2" %% "fs2-core" % fs2Version,
       "co.fs2" %% "fs2-io" % fs2Version,
       "com.github.plokhotnyuk.jsoniter-scala" %% "jsoniter-scala-macros" % jsoniterScalaVersion,
+      "com.h2database" % "h2" % h2Version % Runtime,
       "com.softwaremill.sttp.tapir" %% "tapir-core" % tapirVersion,
       "com.softwaremill.sttp.tapir" %% "tapir-http4s-server" % tapirVersion,
       "com.softwaremill.sttp.tapir" %% "tapir-jsoniter-scala" % tapirVersion,
@@ -42,6 +45,9 @@ lazy val root = (project in file("."))
       "org.apache.logging.log4j" % "log4j-slf4j2-impl" % log4j2Bom.key.value % Runtime,
       "org.http4s" %% "http4s-ember-server" % http4sVersion,
       "org.scalameta" %% "munit" % munitVersion % Test,
+      "org.tpolecat" %% "doobie-core" % doobieVersion,
+      "org.tpolecat" %% "doobie-h2" % doobieVersion,
+      "org.tpolecat" %% "doobie-hikari" % doobieVersion,
       "org.typelevel" %% "cats-core" % catsVersion,
       "org.typelevel" %% "cats-effect" % catsEffectVersion,
       "org.typelevel" %% "munit-cats-effect" % munitCatsEffectVersion % Test,
