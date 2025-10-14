@@ -1,3 +1,11 @@
+val isRunningInCi = sys.env.get("CI").contains("true")
+
+ThisBuild / tpolecatDefaultOptionsMode := {
+  if (isRunningInCi)
+    org.typelevel.sbt.tpolecat.CiMode
+  else
+    org.typelevel.sbt.tpolecat.DevMode
+}
 ThisBuild / organization := "com.example.realworld"
 ThisBuild / organizationName := "Example"
 ThisBuild / version := sys.env.getOrElse("PROJECT_VERSION", "0.0.0-LOCAL-SNAPSHOT")
