@@ -5,7 +5,7 @@ import cats.effect.Resource
 import com.example.realworld.auth.AuthToken
 import com.example.realworld.db.Database
 import com.example.realworld.db.TestDatabaseConfig
-import com.example.realworld.model.User
+import com.example.realworld.model.UserId
 import com.example.realworld.model.UserResponse
 import com.example.realworld.repository.DoobieUserRepository
 import com.example.realworld.service.UserService
@@ -18,6 +18,7 @@ import org.http4s.Headers
 import org.http4s.MediaType
 import org.http4s.Method
 import org.http4s.Request
+import org.http4s.Response
 import org.http4s.Status
 import org.http4s.headers.Authorization
 import org.http4s.headers.`Content-Type`
@@ -39,6 +40,22 @@ class HttpServerSpec extends CatsEffectSuite:
   )
 
   override def munitFixtures = List(httpAppFixture)
+
+  private def assertUserPayload(
+      response: Response[IO],
+      expectedEmail: String,
+      expectedUsername: String
+  ): IO[(UserResponse, UserId)] =
+    for
+      body <- response.as[String]
+      decoded = readFromString[UserResponse](body)
+      _ = assertEquals(decoded.user.email, expectedEmail)
+      _ = assertEquals(decoded.user.username, expectedUsername)
+      _ = assertEquals(decoded.user.bio, None)
+      _ = assertEquals(decoded.user.image, None)
+      userId <- AuthToken.resolve[IO](decoded.user.token)
+      _ = assert(UserId.value(userId) > 0, clue(decoded.user.token))
+    yield (decoded, userId)
 
   test("liveness endpoint returns no content"):
     val httpApp = httpAppFixture()
@@ -62,20 +79,7 @@ class HttpServerSpec extends CatsEffectSuite:
       .run(request)
       .flatMap { response =>
         assertEquals(response.status, Status.Ok)
-        response.as[String].map { body =>
-          val decoded = readFromString[UserResponse](body)
-          val expected = UserResponse(
-            User(
-              email = "jake@jake.jake",
-              token = AuthToken.issue("jake@jake.jake"),
-              username = "Jacob",
-              bio = None,
-              image = None
-            )
-          )
-
-          assertEquals(decoded, expected)
-        }
+        assertUserPayload(response, "jake@jake.jake", "Jacob").map(_ => ())
       }
 
   test("login user endpoint returns existing user payload"):
@@ -99,35 +103,27 @@ class HttpServerSpec extends CatsEffectSuite:
       body = Stream.emits(loginPayload.getBytes(StandardCharsets.UTF_8)).covary[IO]
     )
 
-    val expectedUser = User(
-      email = "alice@example.com",
-      token = AuthToken.issue("alice@example.com"),
-      username = "Alice",
-      bio = None,
-      image = None
-    )
-
     httpApp
       .run(registerRequest)
       .flatMap { response =>
         assertEquals(response.status, Status.Ok)
-        response.as[String].map(_ => ())
-      } *> httpApp
-      .run(loginRequest)
-      .flatMap { response =>
-        assertEquals(response.status, Status.Ok)
-        response.as[String].map { body =>
-          val decoded = readFromString[UserResponse](body)
-          val expected = UserResponse(expectedUser)
-          assertEquals(decoded, expected)
-        }
+        assertUserPayload(response, "alice@example.com", "Alice")
+      }
+      .flatMap { case (_, registeredUserId) =>
+        httpApp
+          .run(loginRequest)
+          .flatMap { response =>
+            assertEquals(response.status, Status.Ok)
+            assertUserPayload(response, "alice@example.com", "Alice").map { case (_, loginUserId) =>
+              assertEquals(loginUserId, registeredUserId)
+            }
+          }
       }
 
   test("current user endpoint returns authenticated user payload"):
     val httpApp = httpAppFixture()
     val registerPayload =
       """{"user":{"username":"Carol","email":"carol@example.com","password":"secret"}}"""
-    val token = AuthToken.issue("carol@example.com")
 
     val registerRequest = Request[IO](
       Method.POST,
@@ -136,32 +132,28 @@ class HttpServerSpec extends CatsEffectSuite:
       body = Stream.emits(registerPayload.getBytes(StandardCharsets.UTF_8)).covary[IO]
     )
 
-    val currentUserRequest = Request[IO](
-      Method.GET,
-      uri"/api/user",
-      headers = Headers(Authorization(Credentials.Token(AuthScheme.Bearer, token)))
-    )
-
-    val expectedUser = User(
-      email = "carol@example.com",
-      token = token,
-      username = "Carol",
-      bio = None,
-      image = None
-    )
-
     httpApp
       .run(registerRequest)
       .flatMap { response =>
         assertEquals(response.status, Status.Ok)
-        response.as[String].map(_ => ())
-      } *> httpApp
-      .run(currentUserRequest)
-      .flatMap { response =>
-        assertEquals(response.status, Status.Ok)
-        response.as[String].map { body =>
-          val decoded = readFromString[UserResponse](body)
-          val expected = UserResponse(expectedUser)
-          assertEquals(decoded, expected)
-        }
+        assertUserPayload(response, "carol@example.com", "Carol")
+      }
+      .flatMap { case (registeredUserResponse, registeredUserId) =>
+        val token = registeredUserResponse.user.token
+        val currentUserRequest = Request[IO](
+          Method.GET,
+          uri"/api/user",
+          headers = Headers(Authorization(Credentials.Token(AuthScheme.Bearer, token)))
+        )
+
+        httpApp
+          .run(currentUserRequest)
+          .flatMap { response =>
+            assertEquals(response.status, Status.Ok)
+            assertUserPayload(response, "carol@example.com", "Carol").map {
+              case (currentUserResponse, currentUserId) =>
+                assertEquals(currentUserId, registeredUserId)
+                assertEquals(currentUserResponse.user.token, token)
+            }
+          }
       }

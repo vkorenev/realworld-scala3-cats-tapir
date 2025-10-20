@@ -17,7 +17,7 @@ final class LiveUserService[F[_]: Async](userRepository: UserRepository[F]) exte
   private def attachToken(user: StoredUser): User =
     User(
       email = user.email,
-      token = AuthToken.issue(user.email),
+      token = AuthToken.issue(user.id),
       username = user.username,
       bio = user.bio,
       image = user.image
@@ -32,7 +32,7 @@ final class LiveUserService[F[_]: Async](userRepository: UserRepository[F]) exte
   override def findByToken(token: String): F[Option[User]] =
     AuthToken
       .resolve[F](token)
-      .flatMap(email => userRepository.findByEmail(email))
+      .flatMap(userId => userRepository.findById(userId))
       .map(_.map(attachToken))
       .handleError(_ => None)
 
