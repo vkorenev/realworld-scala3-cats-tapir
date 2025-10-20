@@ -28,7 +28,7 @@ case class Endpoints[F[_]: Async](userRepository: UserRepository[F]):
     .in(jsonBody[LoginUserRequest])
     .out(jsonBody[UserResponse])
     .errorOut(statusCode(StatusCode.Unauthorized))
-    .description("Authenticate an existing user")
+    .description("Login for existing user")
     .tag("User and Authentication")
     .serverLogic[F] { request =>
       userRepository.authenticate(request.user.email, request.user.password).map {
@@ -57,7 +57,7 @@ case class Endpoints[F[_]: Async](userRepository: UserRepository[F]):
     )
 
     val swaggerEndpoints =
-      SwaggerInterpreter().fromServerEndpoints[F](serverEndpoints, "RealWorld API", "1.0.0")
+      SwaggerInterpreter().fromServerEndpoints[F](serverEndpoints, "RealWorld Conduit API", "1.0.0")
 
     val serverOptions = Http4sServerOptions.customiseInterceptors
       .corsInterceptor(CORSInterceptor.customOrThrow(CORSConfig.default.allowAllMethods))
