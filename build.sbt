@@ -30,12 +30,12 @@ lazy val log4j2Bom = com.here.bom.Bom(
 )
 
 val jvmOptions = List(
-  "-Djava.util.logging.manager=org.apache.logging.log4j.jul.LogManager",
+  "-Djava.util.logging.manager=org.apache.logging.log4j.jul.LogManager"
 )
 
 lazy val root = (project in file("."))
   .settings(
-    log4j2Bom,
+    log4j2Bom
   )
   .settings(
     name := "realworld-backend",
@@ -58,7 +58,7 @@ lazy val root = (project in file("."))
       "org.tpolecat" %% "doobie-hikari" % doobieVersion,
       "org.typelevel" %% "cats-core" % catsVersion,
       "org.typelevel" %% "cats-effect" % catsEffectVersion,
-      "org.typelevel" %% "munit-cats-effect" % munitCatsEffectVersion % Test,
+      "org.typelevel" %% "munit-cats-effect" % munitCatsEffectVersion % Test
     ),
     dependencyOverrides ++= log4j2Bom.key.value.bomDependencies,
     Compile / run / fork := true,
