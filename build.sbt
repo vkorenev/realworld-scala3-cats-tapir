@@ -24,6 +24,7 @@ val tapirVersion = "1.11.50"
 val jsoniterScalaVersion = "2.38.3"
 val doobieVersion = "1.0.0-RC10"
 val h2Version = "2.4.240"
+val jwtScalaVersion = "11.0.3"
 
 lazy val log4j2Bom = com.here.bom.Bom(
   "org.apache.logging.log4j" % "log4j-bom" % log4j2Version
@@ -44,6 +45,7 @@ lazy val root = (project in file("."))
       "co.fs2" %% "fs2-io" % fs2Version,
       "com.github.plokhotnyuk.jsoniter-scala" %% "jsoniter-scala-macros" % jsoniterScalaVersion,
       "com.h2database" % "h2" % h2Version % Runtime,
+      "com.github.jwt-scala" %% "jwt-core" % jwtScalaVersion,
       "com.softwaremill.sttp.tapir" %% "tapir-core" % tapirVersion,
       "com.softwaremill.sttp.tapir" %% "tapir-http4s-server" % tapirVersion,
       "com.softwaremill.sttp.tapir" %% "tapir-jsoniter-scala" % tapirVersion,

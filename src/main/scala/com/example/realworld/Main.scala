@@ -4,6 +4,7 @@ import cats.effect.IO
 import cats.effect.IOApp
 import com.example.realworld.db.Database
 import com.example.realworld.repository.DoobieUserRepository
+import com.example.realworld.service.UserService
 
 object Main extends IOApp.Simple:
   override def run: IO[Unit] =
@@ -11,7 +12,9 @@ object Main extends IOApp.Simple:
       for
         xa <- Database.transactor[IO](Database.default)
         _ <- cats.effect.Resource.eval(Database.initialize[IO](xa))
-        server <- HttpServer(Endpoints[IO](DoobieUserRepository[IO](xa))).resource
+        userRepository = DoobieUserRepository[IO](xa)
+        userService = UserService.live[IO](userRepository)
+        server <- HttpServer(Endpoints[IO](userService)).resource
       yield server
 
     resources.useForever

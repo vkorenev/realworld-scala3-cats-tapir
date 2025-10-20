@@ -1,11 +1,12 @@
 package com.example.realworld
 
 import cats.effect.Async
-import cats.syntax.functor.*
+import cats.syntax.all.*
 import com.example.realworld.model.LoginUserRequest
 import com.example.realworld.model.NewUserRequest
+import com.example.realworld.model.User
 import com.example.realworld.model.UserResponse
-import com.example.realworld.repository.UserRepository
+import com.example.realworld.service.UserService
 import org.http4s.HttpRoutes
 import sttp.model.StatusCode
 import sttp.tapir.*
@@ -16,7 +17,17 @@ import sttp.tapir.server.interceptor.cors.CORSConfig
 import sttp.tapir.server.interceptor.cors.CORSInterceptor
 import sttp.tapir.swagger.bundle.SwaggerInterpreter
 
-case class Endpoints[F[_]: Async](userRepository: UserRepository[F]):
+case class Endpoints[F[_]: Async](userService: UserService[F]):
+  private val secureEndpoint = endpoint
+    .securityIn(auth.bearer[String]())
+    .errorOut(statusCode(StatusCode.Unauthorized))
+    .serverSecurityLogic[User, F] { token =>
+      userService.findByToken(token).map {
+        case Some(user) => Right(user)
+        case None => Left(())
+      }
+    }
+
   private def livenessEndpoint = endpoint.get
     .in("__health" / "liveness")
     .out(statusCode(StatusCode.NoContent))
@@ -31,7 +42,7 @@ case class Endpoints[F[_]: Async](userRepository: UserRepository[F]):
     .description("Login for existing user")
     .tag("User and Authentication")
     .serverLogic[F] { request =>
-      userRepository.authenticate(request.user.email, request.user.password).map {
+      userService.authenticate(request.user.email, request.user.password).map {
         case Some(user) => Right(UserResponse(user))
         case None => Left(())
       }
@@ -44,16 +55,26 @@ case class Endpoints[F[_]: Async](userRepository: UserRepository[F]):
     .description("Register a new user")
     .tag("User and Authentication")
     .serverLogicSuccess[F] { request =>
-      userRepository
-        .create(request.user)
+      userService
+        .register(request.user)
         .map(UserResponse.apply)
+    }
+
+  private def currentUserEndpoint = secureEndpoint.get
+    .in("api" / "user")
+    .out(jsonBody[UserResponse])
+    .description("Gets the currently logged-in user")
+    .tag("User and Authentication")
+    .serverLogicSuccess { user => _ =>
+      Async[F].pure(UserResponse(user))
     }
 
   def routes: HttpRoutes[F] =
     val serverEndpoints = List(
       livenessEndpoint,
       loginUserEndpoint,
-      registerUserEndpoint
+      registerUserEndpoint,
+      currentUserEndpoint
     )
 
     val swaggerEndpoints =
