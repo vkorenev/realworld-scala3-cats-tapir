@@ -2,9 +2,10 @@ package com.example.realworld
 
 import cats.effect.Async
 import cats.syntax.all.*
+import com.example.realworld.auth.AuthToken
 import com.example.realworld.model.LoginUserRequest
 import com.example.realworld.model.NewUserRequest
-import com.example.realworld.model.User
+import com.example.realworld.model.UserId
 import com.example.realworld.model.UserResponse
 import com.example.realworld.service.UserService
 import org.http4s.HttpRoutes
@@ -20,12 +21,9 @@ import sttp.tapir.swagger.bundle.SwaggerInterpreter
 case class Endpoints[F[_]: Async](userService: UserService[F]):
   private val secureEndpoint = endpoint
     .securityIn(auth.bearer[String]())
-    .errorOut(statusCode(StatusCode.Unauthorized))
-    .serverSecurityLogic[User, F] { token =>
-      userService.findByToken(token).map {
-        case Some(user) => Right(user)
-        case None => Left(())
-      }
+    .errorOut(statusCode(StatusCode.Unauthorized).and(jsonBody[Unauthorized]))
+    .serverSecurityLogicRecoverErrors[UserId, F] { token =>
+      AuthToken.resolve[F](token)
     }
 
   private def livenessEndpoint = endpoint.get
@@ -65,8 +63,8 @@ case class Endpoints[F[_]: Async](userService: UserService[F]):
     .out(jsonBody[UserResponse])
     .description("Gets the currently logged-in user")
     .tag("User and Authentication")
-    .serverLogicSuccess { user => _ =>
-      Async[F].pure(UserResponse(user))
+    .serverLogicRecoverErrors { userId => _ =>
+      userService.findById(userId).map(UserResponse.apply)
     }
 
   def routes: HttpRoutes[F] =
