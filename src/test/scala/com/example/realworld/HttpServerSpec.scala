@@ -44,15 +44,17 @@ class HttpServerSpec extends CatsEffectSuite:
   private def assertUserPayload(
       response: Response[IO],
       expectedEmail: String,
-      expectedUsername: String
+      expectedUsername: String,
+      expectedBio: Option[String] = None,
+      expectedImage: Option[String] = None
   ): IO[(UserResponse, UserId)] =
     for
       body <- response.as[String]
       decoded = readFromString[UserResponse](body)
       _ = assertEquals(decoded.user.email, expectedEmail)
       _ = assertEquals(decoded.user.username, expectedUsername)
-      _ = assertEquals(decoded.user.bio, None)
-      _ = assertEquals(decoded.user.image, None)
+      _ = assertEquals(decoded.user.bio, expectedBio)
+      _ = assertEquals(decoded.user.image, expectedImage)
       userId <- AuthToken.resolve[IO](decoded.user.token)
       _ = assert(UserId.value(userId) > 0, clue(decoded.user.token))
     yield (decoded, userId)
@@ -157,3 +159,73 @@ class HttpServerSpec extends CatsEffectSuite:
             }
           }
       }
+
+  test("update user endpoint updates the authenticated user"):
+    val httpApp = httpAppFixture()
+    val registerPayload =
+      """{"user":{"username":"Eve","email":"eve@example.com","password":"password1"}}"""
+    val updatePayload =
+      """{"user":{"email":"eve@conduit.example","username":"EveUpdated","password":"newsecret","bio":"Updated bio","image":"https://example.com/avatar.png"}}"""
+    val expectedEmail = "eve@conduit.example"
+    val expectedUsername = "EveUpdated"
+    val expectedBio = Some("Updated bio")
+    val expectedImage = Some("https://example.com/avatar.png")
+
+    val registerRequest = Request[IO](
+      Method.POST,
+      uri"/api/users",
+      headers = Headers(`Content-Type`(MediaType.application.json)),
+      body = Stream.emits(registerPayload.getBytes(StandardCharsets.UTF_8)).covary[IO]
+    )
+
+    val result =
+      for
+        registerResponse <- httpApp.run(registerRequest)
+        _ = assertEquals(registerResponse.status, Status.Ok)
+        (registeredUserResponse, registeredUserId) <-
+          assertUserPayload(registerResponse, "eve@example.com", "Eve")
+        token = registeredUserResponse.user.token
+        updateRequest = Request[IO](
+          Method.PUT,
+          uri"/api/user",
+          headers = Headers(
+            Authorization(Credentials.Token(AuthScheme.Bearer, token)),
+            `Content-Type`(MediaType.application.json)
+          ),
+          body = Stream.emits(updatePayload.getBytes(StandardCharsets.UTF_8)).covary[IO]
+        )
+        updateResponse <- httpApp.run(updateRequest)
+        _ = assertEquals(updateResponse.status, Status.Ok)
+        (updatedUserResponse, updatedUserId) <-
+          assertUserPayload(
+            updateResponse,
+            expectedEmail,
+            expectedUsername,
+            expectedBio,
+            expectedImage
+          )
+        _ = assertEquals(updatedUserId, registeredUserId)
+        _ = assertEquals(updatedUserResponse.user.token, token)
+        loginPayload =
+          """{"user":{"email":"eve@conduit.example","password":"newsecret"}}"""
+        loginRequest = Request[IO](
+          Method.POST,
+          uri"/api/users/login",
+          headers = Headers(`Content-Type`(MediaType.application.json)),
+          body = Stream.emits(loginPayload.getBytes(StandardCharsets.UTF_8)).covary[IO]
+        )
+        loginResponse <- httpApp.run(loginRequest)
+        _ = assertEquals(loginResponse.status, Status.Ok)
+        (loggedInUserResponse, loggedInUserId) <-
+          assertUserPayload(
+            loginResponse,
+            expectedEmail,
+            expectedUsername,
+            expectedBio,
+            expectedImage
+          )
+        _ = assertEquals(loggedInUserId, registeredUserId)
+        _ = assertEquals(loggedInUserResponse.user.token, token)
+      yield ()
+
+    result

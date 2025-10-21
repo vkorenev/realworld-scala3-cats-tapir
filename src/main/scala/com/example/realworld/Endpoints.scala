@@ -5,6 +5,7 @@ import cats.syntax.all.*
 import com.example.realworld.auth.AuthToken
 import com.example.realworld.model.LoginUserRequest
 import com.example.realworld.model.NewUserRequest
+import com.example.realworld.model.UpdateUserRequest
 import com.example.realworld.model.UserId
 import com.example.realworld.model.UserResponse
 import com.example.realworld.service.UserService
@@ -67,12 +68,23 @@ case class Endpoints[F[_]: Async](userService: UserService[F]):
       userService.findById(userId).map(UserResponse.apply)
     }
 
+  private def updateUserEndpoint = secureEndpoint.put
+    .in("api" / "user")
+    .in(jsonBody[UpdateUserRequest])
+    .out(jsonBody[UserResponse])
+    .description("Updated user information for current user")
+    .tag("User and Authentication")
+    .serverLogicRecoverErrors { userId => request =>
+      userService.update(userId, request.user).map(UserResponse.apply)
+    }
+
   def routes: HttpRoutes[F] =
     val serverEndpoints = List(
       livenessEndpoint,
       loginUserEndpoint,
       registerUserEndpoint,
-      currentUserEndpoint
+      currentUserEndpoint,
+      updateUserEndpoint
     )
 
     val swaggerEndpoints =

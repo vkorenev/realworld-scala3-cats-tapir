@@ -3,9 +3,11 @@ package com.example.realworld.repository
 import cats.effect.Async
 import cats.syntax.all.*
 import com.example.realworld.model.NewUser
+import com.example.realworld.model.UpdateUser
 import com.example.realworld.model.UserId
 import com.example.realworld.security.PasswordHasher
 import com.example.realworld.security.Pbkdf2PasswordHasher
+import doobie.ConnectionIO
 import doobie.Read
 import doobie.Transactor
 import doobie.syntax.all.*
@@ -14,6 +16,7 @@ trait UserRepository[F[_]]:
   def create(input: NewUser): F[StoredUser]
   def authenticate(email: String, password: String): F[Option[StoredUser]]
   def findById(id: UserId): F[Option[StoredUser]]
+  def update(id: UserId, update: UpdateUser): F[Option[StoredUser]]
 
 final case class StoredUser(
     id: UserId,
@@ -69,6 +72,52 @@ final class DoobieUserRepository[F[_]: Async](
       FROM users
       WHERE id = $id
     """.query[StoredUser].option.transact(xa)
+
+  override def update(id: UserId, update: UpdateUser): F[Option[StoredUser]] =
+    update.password.traverse(passwordHasher.hash).flatMap { hashedPasswordOpt =>
+      sql"""
+        SELECT id, email, username, bio, image, password
+        FROM users
+        WHERE id = $id
+        FOR UPDATE
+      """
+        .query[(StoredUser, String)]
+        .option
+        .flatMap {
+          case Some((existing, currentPasswordHash)) =>
+            val updatedEmail = update.email.getOrElse(existing.email)
+            val updatedUsername = update.username.getOrElse(existing.username)
+            val updatedBio = update.bio match
+              case some @ Some(_) => some
+              case None => existing.bio
+            val updatedImage = update.image match
+              case some @ Some(_) => some
+              case None => existing.image
+            val updatedPasswordHash = hashedPasswordOpt.getOrElse(currentPasswordHash)
+
+            sql"""
+              UPDATE users
+              SET email = $updatedEmail,
+                  username = $updatedUsername,
+                  bio = $updatedBio,
+                  image = $updatedImage,
+                  password = $updatedPasswordHash
+              WHERE id = $id
+            """.update.run.as {
+              Some(
+                existing.copy(
+                  email = updatedEmail,
+                  username = updatedUsername,
+                  bio = updatedBio,
+                  image = updatedImage
+                )
+              )
+            }
+          case None =>
+            Option.empty[StoredUser].pure[ConnectionIO]
+        }
+        .transact(xa)
+    }
 
 object DoobieUserRepository:
   def apply[F[_]: Async](xa: Transactor[F]): DoobieUserRepository[F] =

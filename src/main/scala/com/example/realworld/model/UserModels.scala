@@ -28,6 +28,24 @@ object LoginUserRequest:
   given JsonValueCodec[LoginUserRequest] = JsonCodecMaker.make
   given Schema[LoginUserRequest] = Schema.derived
 
+final case class UpdateUser(
+    email: Option[String],
+    username: Option[String],
+    password: Option[String],
+    image: Option[String],
+    bio: Option[String]
+)
+
+object UpdateUser:
+  given JsonValueCodec[UpdateUser] = JsonCodecMaker.make
+  given Schema[UpdateUser] = Schema.derived
+
+final case class UpdateUserRequest(user: UpdateUser)
+
+object UpdateUserRequest:
+  given JsonValueCodec[UpdateUserRequest] = JsonCodecMaker.make
+  given Schema[UpdateUserRequest] = Schema.derived
+
 final case class User(
     email: String,
     token: String,
