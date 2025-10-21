@@ -56,7 +56,7 @@ lazy val root = (project in file("."))
       "org.http4s" %% "http4s-ember-server" % http4sVersion,
       "org.scalameta" %% "munit" % munitVersion % Test,
       "org.tpolecat" %% "doobie-core" % doobieVersion,
-      "org.tpolecat" %% "doobie-h2" % doobieVersion,
+      "org.tpolecat" %% "doobie-h2" % doobieVersion exclude ("com.h2database", "h2"),
       "org.tpolecat" %% "doobie-hikari" % doobieVersion,
       "org.typelevel" %% "cats-core" % catsVersion,
       "org.typelevel" %% "cats-effect" % catsEffectVersion,
