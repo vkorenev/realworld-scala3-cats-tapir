@@ -11,17 +11,20 @@ import pdi.jwt.Jwt
 import pdi.jwt.JwtAlgorithm
 import pdi.jwt.JwtClaim
 
-object AuthToken:
-  private val SecretKey = "change-me"
-  private val Algorithm = JwtAlgorithm.HS256
-  final private case class TokenPayload(userId: Long)
-  private given JsonValueCodec[TokenPayload] = JsonCodecMaker.make
+trait AuthToken[F[_]]:
+  def issue(userId: UserId): F[String]
+  def resolve(token: String): F[UserId]
 
-  def issue(userId: UserId): String =
-    val claim = JwtClaim(content = writeToString(TokenPayload(UserId.value(userId))))
-    Jwt.encode(claim, SecretKey, Algorithm)
+case class JwtAuthToken[F[_]: MonadThrow]() extends AuthToken[F]:
+  import JwtAuthToken.*
 
-  def resolve[F[_]: MonadThrow](token: String): F[UserId] =
+  override def issue(userId: UserId): F[String] =
+    MonadThrow[F].catchNonFatal {
+      val claim = JwtClaim(content = writeToString(TokenPayload(UserId.value(userId))))
+      Jwt.encode(claim, SecretKey, Algorithm)
+    }
+
+  override def resolve(token: String): F[UserId] =
     MonadThrow[F]
       .fromTry(
         Jwt.decode(token, SecretKey, Seq(Algorithm))
@@ -31,3 +34,9 @@ object AuthToken:
           UserId(readFromString[TokenPayload](claim.content).userId)
         }
       }
+
+object JwtAuthToken:
+  private val SecretKey = "change-me"
+  private val Algorithm = JwtAlgorithm.HS256
+  final private case class TokenPayload(userId: Long)
+  private given JsonValueCodec[TokenPayload] = JsonCodecMaker.make

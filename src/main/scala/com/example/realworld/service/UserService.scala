@@ -1,5 +1,4 @@
 package com.example.realworld.service
-
 import cats.effect.Async
 import cats.effect.Sync
 import cats.syntax.all.*
@@ -18,37 +17,51 @@ trait UserService[F[_]]:
   def findById(userId: UserId): F[User]
   def update(userId: UserId, update: UpdateUser): F[User]
 
-final class LiveUserService[F[_]: Sync](userRepository: UserRepository[F]) extends UserService[F]:
-  private def attachToken(user: StoredUser): User =
-    User(
-      email = user.email,
-      token = AuthToken.issue(user.id),
-      username = user.username,
-      bio = user.bio,
-      image = user.image
-    )
+final class LiveUserService[F[_]: Sync](
+    userRepository: UserRepository[F],
+    authToken: AuthToken[F]
+) extends UserService[F]:
+  private def attachToken(user: StoredUser): F[User] =
+    authToken.issue(user.id).map { token =>
+      User(
+        email = user.email,
+        token = token,
+        username = user.username,
+        bio = user.bio,
+        image = user.image
+      )
+    }
 
   override def register(input: NewUser): F[User] =
-    userRepository.create(input).map(attachToken)
+    userRepository.create(input).flatMap(attachToken)
 
   override def authenticate(email: String, password: String): F[Option[User]] =
-    userRepository.authenticate(email, password).map(_.map(attachToken))
+    userRepository.authenticate(email, password).flatMap {
+      case Some(user) => attachToken(user).map(_.some)
+      case None => Sync[F].pure(None)
+    }
 
   override def findById(userId: UserId): F[User] =
     userRepository.findById(userId).flatMap {
-      case Some(user) => Sync[F].delay(attachToken(user))
+      case Some(user) => attachToken(user)
       case None => Sync[F].raiseError(Unauthorized())
     }
 
   override def update(userId: UserId, update: UpdateUser): F[User] =
     userRepository.update(userId, update).flatMap {
-      case Some(user) => Sync[F].delay(attachToken(user))
+      case Some(user) => attachToken(user)
       case None => Sync[F].raiseError(Unauthorized())
     }
 
 object UserService:
-  def live[F[_]: Async](userRepository: UserRepository[F]): UserService[F] =
-    new LiveUserService(userRepository)
+  def live[F[_]: Async](
+      userRepository: UserRepository[F],
+      authToken: AuthToken[F]
+  ): UserService[F] =
+    new LiveUserService(userRepository, authToken)
 
-  def apply[F[_]: Async](userRepository: UserRepository[F]): UserService[F] =
-    live(userRepository)
+  def apply[F[_]: Async](
+      userRepository: UserRepository[F],
+      authToken: AuthToken[F]
+  ): UserService[F] =
+    live(userRepository, authToken)

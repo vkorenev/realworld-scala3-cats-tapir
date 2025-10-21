@@ -19,13 +19,11 @@ import sttp.tapir.server.interceptor.cors.CORSConfig
 import sttp.tapir.server.interceptor.cors.CORSInterceptor
 import sttp.tapir.swagger.bundle.SwaggerInterpreter
 
-case class Endpoints[F[_]: Async](userService: UserService[F]):
+case class Endpoints[F[_]: Async](userService: UserService[F], authToken: AuthToken[F]):
   private val secureEndpoint = endpoint
     .securityIn(auth.bearer[String]())
     .errorOut(statusCode(StatusCode.Unauthorized).and(jsonBody[Unauthorized]))
-    .serverSecurityLogicRecoverErrors[UserId, F] { token =>
-      AuthToken.resolve[F](token)
-    }
+    .serverSecurityLogicRecoverErrors[UserId, F](authToken.resolve)
 
   private def livenessEndpoint = endpoint.get
     .in("__health" / "liveness")

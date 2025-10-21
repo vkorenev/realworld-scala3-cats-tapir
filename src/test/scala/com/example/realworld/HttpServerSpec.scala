@@ -2,7 +2,7 @@ package com.example.realworld
 
 import cats.effect.IO
 import cats.effect.Resource
-import com.example.realworld.auth.AuthToken
+import com.example.realworld.auth.JwtAuthToken
 import com.example.realworld.db.Database
 import com.example.realworld.db.TestDatabaseConfig
 import com.example.realworld.model.UserId
@@ -28,6 +28,7 @@ import java.nio.charset.StandardCharsets
 import java.util.UUID
 
 class HttpServerSpec extends CatsEffectSuite:
+  private val authToken = JwtAuthToken[IO]()
   private val httpAppFixture = ResourceSuiteLocalFixture(
     "http-app",
     for
@@ -35,8 +36,8 @@ class HttpServerSpec extends CatsEffectSuite:
       transactor <- Database.transactor[IO](TestDatabaseConfig.forTest(dbName))
       _ <- Resource.eval(Database.initialize[IO](transactor))
       userRepository = DoobieUserRepository[IO](transactor)
-      userService = UserService.live[IO](userRepository)
-    yield Endpoints[IO](userService).routes.orNotFound
+      userService = UserService.live[IO](userRepository, authToken)
+    yield Endpoints[IO](userService, authToken).routes.orNotFound
   )
 
   override def munitFixtures = List(httpAppFixture)
@@ -55,7 +56,7 @@ class HttpServerSpec extends CatsEffectSuite:
       _ = assertEquals(decoded.user.username, expectedUsername)
       _ = assertEquals(decoded.user.bio, expectedBio)
       _ = assertEquals(decoded.user.image, expectedImage)
-      userId <- AuthToken.resolve[IO](decoded.user.token)
+      userId <- authToken.resolve(decoded.user.token)
       _ = assert(UserId.value(userId) > 0, clue(decoded.user.token))
     yield (decoded, userId)
 
