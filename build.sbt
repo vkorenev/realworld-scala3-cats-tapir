@@ -25,6 +25,7 @@ val jsoniterScalaVersion = "2.38.3"
 val doobieVersion = "1.0.0-RC10"
 val h2Version = "2.4.240"
 val jwtScalaVersion = "11.0.3"
+val pureconfigVersion = "0.17.9"
 
 lazy val log4j2Bom = com.here.bom.Bom(
   "org.apache.logging.log4j" % "log4j-bom" % log4j2Version
@@ -46,6 +47,9 @@ lazy val root = (project in file("."))
       "com.github.plokhotnyuk.jsoniter-scala" %% "jsoniter-scala-macros" % jsoniterScalaVersion,
       "com.h2database" % "h2" % h2Version % Runtime,
       "com.github.jwt-scala" %% "jwt-core" % jwtScalaVersion,
+      "com.github.pureconfig" %% "pureconfig-core" % pureconfigVersion,
+      "com.github.pureconfig" %% "pureconfig-cats-effect" % pureconfigVersion,
+      "com.github.pureconfig" %% "pureconfig-generic-scala3" % pureconfigVersion,
       "com.softwaremill.sttp.tapir" %% "tapir-core" % tapirVersion,
       "com.softwaremill.sttp.tapir" %% "tapir-http4s-server" % tapirVersion,
       "com.softwaremill.sttp.tapir" %% "tapir-jsoniter-scala" % tapirVersion,
@@ -69,5 +73,7 @@ lazy val root = (project in file("."))
     scalacOptions ++= Seq(
       "-Wsafe-init",
       "-Wunused:all",
-    ),
+      "-source:3.7-migration",
+      "-Xmax-inlines:64"
+    )
   )

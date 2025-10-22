@@ -15,19 +15,19 @@ trait AuthToken[F[_]]:
   def issue(userId: UserId): F[String]
   def resolve(token: String): F[UserId]
 
-case class JwtAuthToken[F[_]: MonadThrow]() extends AuthToken[F]:
+final case class JwtAuthToken[F[_]: MonadThrow](secretKey: String) extends AuthToken[F]:
   import JwtAuthToken.*
 
   override def issue(userId: UserId): F[String] =
     MonadThrow[F].catchNonFatal {
       val claim = JwtClaim(content = writeToString(TokenPayload(UserId.value(userId))))
-      Jwt.encode(claim, SecretKey, Algorithm)
+      Jwt.encode(claim, secretKey, Algorithm)
     }
 
   override def resolve(token: String): F[UserId] =
     MonadThrow[F]
       .fromTry(
-        Jwt.decode(token, SecretKey, Seq(Algorithm))
+        Jwt.decode(token, secretKey, Seq(Algorithm))
       )
       .flatMap { claim =>
         MonadThrow[F].catchNonFatal {
@@ -36,7 +36,6 @@ case class JwtAuthToken[F[_]: MonadThrow]() extends AuthToken[F]:
       }
 
 object JwtAuthToken:
-  private val SecretKey = "change-me"
   private val Algorithm = JwtAlgorithm.HS256
   final private case class TokenPayload(userId: Long)
   private given JsonValueCodec[TokenPayload] = JsonCodecMaker.make

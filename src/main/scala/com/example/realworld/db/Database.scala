@@ -9,13 +9,6 @@ import doobie.implicits.*
 import doobie.util.transactor.Transactor
 
 object Database:
-  val default: HikariConfig = HikariConfig(
-    driverClassName = Some("org.h2.Driver"),
-    jdbcUrl = "jdbc:h2:mem:realworld;DB_CLOSE_DELAY=-1;MODE=PostgreSQL;DATABASE_TO_UPPER=false",
-    username = Some("sa"),
-    password = None
-  )
-
   def transactor[F[_]: Async](config: HikariConfig): Resource[F, Transactor[F]] =
     HikariTransactor.fromConfig[F](config)
 

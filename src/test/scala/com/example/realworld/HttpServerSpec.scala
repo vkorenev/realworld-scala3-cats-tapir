@@ -28,7 +28,8 @@ import java.nio.charset.StandardCharsets
 import java.util.UUID
 
 class HttpServerSpec extends CatsEffectSuite:
-  private val authToken = JwtAuthToken[IO]()
+  private val jwtSecret = "test-secret-key"
+  private val authToken = JwtAuthToken[IO](jwtSecret)
   private val httpAppFixture = ResourceSuiteLocalFixture(
     "http-app",
     for
