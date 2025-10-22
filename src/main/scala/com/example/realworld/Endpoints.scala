@@ -1,10 +1,12 @@
 package com.example.realworld
 
+import cats.ApplicativeThrow
 import cats.effect.Async
 import cats.syntax.all.*
 import com.example.realworld.auth.AuthToken
 import com.example.realworld.model.LoginUserRequest
 import com.example.realworld.model.NewUserRequest
+import com.example.realworld.model.ProfileResponse
 import com.example.realworld.model.UpdateUserRequest
 import com.example.realworld.model.UserId
 import com.example.realworld.model.UserResponse
@@ -24,6 +26,11 @@ case class Endpoints[F[_]: Async](userService: UserService[F], authToken: AuthTo
     .securityIn(auth.bearer[String]())
     .errorOut(statusCode(StatusCode.Unauthorized).and(jsonBody[Unauthorized]))
     .serverSecurityLogicRecoverErrors[UserId, F](authToken.resolve)
+
+  private val optionallySecureEndpoint = endpoint
+    .securityIn(auth.bearer[Option[String]]())
+    .errorOut(statusCode(StatusCode.Unauthorized).and(jsonBody[Unauthorized]))
+    .serverSecurityLogicRecoverErrors[Option[UserId], F](_.traverse(authToken.resolve))
 
   private def livenessEndpoint = endpoint.get
     .in("__health" / "liveness")
@@ -76,13 +83,25 @@ case class Endpoints[F[_]: Async](userService: UserService[F], authToken: AuthTo
       userService.update(userId, request.user).map(UserResponse.apply)
     }
 
+  private def profileEndpoint = optionallySecureEndpoint.get
+    .in("api" / "profiles" / path[String]("username"))
+    .out(jsonBody[ProfileResponse])
+    .description("Get a profile of a user of the system. Auth is optional")
+    .tag("Profile")
+    .serverLogicRecoverErrors { userId => username =>
+      userService
+        .findProfile(userId, username)
+        .flatMap(ApplicativeThrow[F].fromOption(_, NotFound()).map(ProfileResponse.apply))
+    }
+
   def routes: HttpRoutes[F] =
     val serverEndpoints = List(
       livenessEndpoint,
       loginUserEndpoint,
       registerUserEndpoint,
       currentUserEndpoint,
-      updateUserEndpoint
+      updateUserEndpoint,
+      profileEndpoint
     )
 
     val swaggerEndpoints =

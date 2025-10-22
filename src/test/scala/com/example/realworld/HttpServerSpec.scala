@@ -5,6 +5,7 @@ import cats.effect.Resource
 import com.example.realworld.auth.JwtAuthToken
 import com.example.realworld.db.Database
 import com.example.realworld.db.TestDatabaseConfig
+import com.example.realworld.model.ProfileResponse
 import com.example.realworld.model.UserId
 import com.example.realworld.model.UserResponse
 import com.example.realworld.repository.DoobieUserRepository
@@ -61,6 +62,22 @@ class HttpServerSpec extends CatsEffectSuite:
       _ = assert(UserId.value(userId) > 0, clue(decoded.user.token))
     yield (decoded, userId)
 
+  private def assertProfilePayload(
+      response: Response[IO],
+      expectedUsername: String,
+      expectedBio: Option[String],
+      expectedImage: Option[String],
+      expectedFollowing: Boolean
+  ): IO[Unit] =
+    for
+      body <- response.as[String]
+      decoded = readFromString[ProfileResponse](body)
+      _ = assertEquals(decoded.profile.username, expectedUsername)
+      _ = assertEquals(decoded.profile.bio, expectedBio)
+      _ = assertEquals(decoded.profile.image, expectedImage)
+      _ = assertEquals(decoded.profile.following, expectedFollowing)
+    yield ()
+
   test("liveness endpoint returns no content"):
     val httpApp = httpAppFixture()
     val request = Request[IO](Method.GET, uri"/__health/liveness")
@@ -85,6 +102,30 @@ class HttpServerSpec extends CatsEffectSuite:
         assertEquals(response.status, Status.Ok)
         assertUserPayload(response, "jake@jake.jake", "Jacob").map(_ => ())
       }
+
+  test("profile endpoint returns user profile without authentication"):
+    val httpApp = httpAppFixture()
+    val registerPayload =
+      """{"user":{"username":"Mallory","email":"mallory@example.com","password":"password"}}"""
+    val registerRequest = Request[IO](
+      Method.POST,
+      uri"/api/users",
+      headers = Headers(`Content-Type`(MediaType.application.json)),
+      body = Stream.emits(registerPayload.getBytes(StandardCharsets.UTF_8)).covary[IO]
+    )
+
+    val result =
+      for
+        registerResponse <- httpApp.run(registerRequest)
+        _ = assertEquals(registerResponse.status, Status.Ok)
+        _ <- assertUserPayload(registerResponse, "mallory@example.com", "Mallory")
+        profileRequest = Request[IO](Method.GET, uri"/api/profiles/Mallory")
+        profileResponse <- httpApp.run(profileRequest)
+        _ = assertEquals(profileResponse.status, Status.Ok)
+        _ <- assertProfilePayload(profileResponse, "Mallory", None, None, expectedFollowing = false)
+      yield ()
+
+    result
 
   test("login user endpoint returns existing user payload"):
     val httpApp = httpAppFixture()
@@ -228,6 +269,20 @@ class HttpServerSpec extends CatsEffectSuite:
           )
         _ = assertEquals(loggedInUserId, registeredUserId)
         _ = assertEquals(loggedInUserResponse.user.token, token)
+        profileRequest = Request[IO](
+          Method.GET,
+          uri"/api/profiles" / expectedUsername,
+          headers = Headers(Authorization(Credentials.Token(AuthScheme.Bearer, token)))
+        )
+        profileResponse <- httpApp.run(profileRequest)
+        _ = assertEquals(profileResponse.status, Status.Ok)
+        _ <- assertProfilePayload(
+          profileResponse,
+          expectedUsername,
+          expectedBio,
+          expectedImage,
+          expectedFollowing = false
+        )
       yield ()
 
     result

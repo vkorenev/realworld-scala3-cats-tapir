@@ -63,3 +63,20 @@ final case class UserResponse(user: User)
 object UserResponse:
   given JsonValueCodec[UserResponse] = JsonCodecMaker.make
   given Schema[UserResponse] = Schema.derived
+
+final case class Profile(
+    username: String,
+    bio: Option[String],
+    image: Option[String],
+    following: Boolean
+)
+
+object Profile:
+  given JsonValueCodec[Profile] = JsonCodecMaker.make
+  given Schema[Profile] = Schema.derived
+
+final case class ProfileResponse(profile: Profile)
+
+object ProfileResponse:
+  given JsonValueCodec[ProfileResponse] = JsonCodecMaker.make
+  given Schema[ProfileResponse] = Schema.derived

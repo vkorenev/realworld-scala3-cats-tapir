@@ -5,6 +5,7 @@ import cats.syntax.all.*
 import com.example.realworld.Unauthorized
 import com.example.realworld.auth.AuthToken
 import com.example.realworld.model.NewUser
+import com.example.realworld.model.Profile
 import com.example.realworld.model.UpdateUser
 import com.example.realworld.model.User
 import com.example.realworld.model.UserId
@@ -16,6 +17,7 @@ trait UserService[F[_]]:
   def authenticate(email: String, password: String): F[Option[User]]
   def findById(userId: UserId): F[User]
   def update(userId: UserId, update: UpdateUser): F[User]
+  def findProfile(viewer: Option[UserId], username: String): F[Option[Profile]]
 
 final class LiveUserService[F[_]: Sync](
     userRepository: UserRepository[F],
@@ -51,6 +53,18 @@ final class LiveUserService[F[_]: Sync](
     userRepository.update(userId, update).flatMap {
       case Some(user) => attachToken(user)
       case None => Sync[F].raiseError(Unauthorized())
+    }
+
+  override def findProfile(viewer: Option[UserId], username: String): F[Option[Profile]] =
+    userRepository.findByUsername(username).map { maybeUser =>
+      maybeUser.map { user =>
+        Profile(
+          username = user.username,
+          bio = user.bio,
+          image = user.image,
+          following = false // following relationships not implemented yet
+        )
+      }
     }
 
 object UserService:

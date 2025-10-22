@@ -17,6 +17,7 @@ trait UserRepository[F[_]]:
   def authenticate(email: String, password: String): F[Option[StoredUser]]
   def findById(id: UserId): F[Option[StoredUser]]
   def update(id: UserId, update: UpdateUser): F[Option[StoredUser]]
+  def findByUsername(username: String): F[Option[StoredUser]]
 
 final case class StoredUser(
     id: UserId,
@@ -118,6 +119,13 @@ final class DoobieUserRepository[F[_]: Async](
         }
         .transact(xa)
     }
+
+  override def findByUsername(username: String): F[Option[StoredUser]] =
+    sql"""
+      SELECT id, email, username, bio, image
+      FROM users
+      WHERE username = $username
+    """.query[StoredUser].option.transact(xa)
 
 object DoobieUserRepository:
   def apply[F[_]: Async](xa: Transactor[F]): DoobieUserRepository[F] =

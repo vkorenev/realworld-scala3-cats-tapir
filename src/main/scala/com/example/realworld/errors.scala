@@ -8,3 +8,8 @@ case class Unauthorized() extends Exception derives Schema
 
 object Unauthorized:
   given JsonValueCodec[Unauthorized] = JsonCodecMaker.make
+
+case class NotFound() extends Exception derives Schema
+
+object NotFound:
+  given JsonValueCodec[NotFound] = JsonCodecMaker.make
