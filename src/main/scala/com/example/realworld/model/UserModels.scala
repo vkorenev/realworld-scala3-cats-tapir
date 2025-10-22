@@ -1,32 +1,17 @@
 package com.example.realworld.model
 
-import com.github.plokhotnyuk.jsoniter_scala.core.JsonValueCodec
-import com.github.plokhotnyuk.jsoniter_scala.macros.JsonCodecMaker
+import com.github.plokhotnyuk.jsoniter_scala.macros.ConfiguredJsonValueCodec
 import sttp.tapir.Schema
 
 final case class NewUser(username: String, email: String, password: String)
+    derives ConfiguredJsonValueCodec,
+      Schema
 
-object NewUser:
-  given JsonValueCodec[NewUser] = JsonCodecMaker.make
-  given Schema[NewUser] = Schema.derived
+final case class LoginUser(email: String, password: String) derives ConfiguredJsonValueCodec, Schema
 
-final case class LoginUser(email: String, password: String)
+final case class NewUserRequest(user: NewUser) derives ConfiguredJsonValueCodec, Schema
 
-object LoginUser:
-  given JsonValueCodec[LoginUser] = JsonCodecMaker.make
-  given Schema[LoginUser] = Schema.derived
-
-final case class NewUserRequest(user: NewUser)
-
-object NewUserRequest:
-  given JsonValueCodec[NewUserRequest] = JsonCodecMaker.make
-  given Schema[NewUserRequest] = Schema.derived
-
-final case class LoginUserRequest(user: LoginUser)
-
-object LoginUserRequest:
-  given JsonValueCodec[LoginUserRequest] = JsonCodecMaker.make
-  given Schema[LoginUserRequest] = Schema.derived
+final case class LoginUserRequest(user: LoginUser) derives ConfiguredJsonValueCodec, Schema
 
 final case class UpdateUser(
     email: Option[String],
@@ -34,17 +19,10 @@ final case class UpdateUser(
     password: Option[String],
     image: Option[String],
     bio: Option[String]
-)
+) derives ConfiguredJsonValueCodec,
+      Schema
 
-object UpdateUser:
-  given JsonValueCodec[UpdateUser] = JsonCodecMaker.make
-  given Schema[UpdateUser] = Schema.derived
-
-final case class UpdateUserRequest(user: UpdateUser)
-
-object UpdateUserRequest:
-  given JsonValueCodec[UpdateUserRequest] = JsonCodecMaker.make
-  given Schema[UpdateUserRequest] = Schema.derived
+final case class UpdateUserRequest(user: UpdateUser) derives ConfiguredJsonValueCodec, Schema
 
 final case class User(
     email: String,
@@ -52,31 +30,17 @@ final case class User(
     username: String,
     bio: Option[String],
     image: Option[String]
-)
+) derives ConfiguredJsonValueCodec,
+      Schema
 
-object User:
-  given JsonValueCodec[User] = JsonCodecMaker.make
-  given Schema[User] = Schema.derived
-
-final case class UserResponse(user: User)
-
-object UserResponse:
-  given JsonValueCodec[UserResponse] = JsonCodecMaker.make
-  given Schema[UserResponse] = Schema.derived
+final case class UserResponse(user: User) derives ConfiguredJsonValueCodec, Schema
 
 final case class Profile(
     username: String,
     bio: Option[String],
     image: Option[String],
     following: Boolean
-)
+) derives ConfiguredJsonValueCodec,
+      Schema
 
-object Profile:
-  given JsonValueCodec[Profile] = JsonCodecMaker.make
-  given Schema[Profile] = Schema.derived
-
-final case class ProfileResponse(profile: Profile)
-
-object ProfileResponse:
-  given JsonValueCodec[ProfileResponse] = JsonCodecMaker.make
-  given Schema[ProfileResponse] = Schema.derived
+final case class ProfileResponse(profile: Profile) derives ConfiguredJsonValueCodec, Schema
