@@ -127,6 +127,24 @@ case class Endpoints[F[_]: Async](userService: UserService[F], authToken: AuthTo
         .flatMap(ApplicativeThrow[F].fromOption(_, NotFound()).map(ProfileResponse.apply))
     }
 
+  private def followProfileEndpoint = secureEndpoint.post
+    .in("api" / "profiles" / path[String]("username") / "follow")
+    .out(jsonBody[ProfileResponse])
+    .description("Follow a user by username")
+    .tag("Profile")
+    .serverLogicRecoverErrors { followerId => username =>
+      userService.follow(followerId, username).map(ProfileResponse.apply)
+    }
+
+  private def unfollowProfileEndpoint = secureEndpoint.delete
+    .in("api" / "profiles" / path[String]("username") / "follow")
+    .out(jsonBody[ProfileResponse])
+    .description("Unfollow a user by username")
+    .tag("Profile")
+    .serverLogicRecoverErrors { followerId => username =>
+      userService.unfollow(followerId, username).map(ProfileResponse.apply)
+    }
+
   def routes: HttpRoutes[F] =
     val serverEndpoints = List(
       livenessEndpoint,
@@ -134,7 +152,9 @@ case class Endpoints[F[_]: Async](userService: UserService[F], authToken: AuthTo
       registerUserEndpoint,
       currentUserEndpoint,
       updateUserEndpoint,
-      profileEndpoint
+      profileEndpoint,
+      followProfileEndpoint,
+      unfollowProfileEndpoint
     )
 
     val swaggerEndpoints =

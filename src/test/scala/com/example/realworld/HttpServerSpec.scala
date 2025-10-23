@@ -9,6 +9,7 @@ import com.example.realworld.model.ProfileResponse
 import com.example.realworld.model.UserId
 import com.example.realworld.model.UserResponse
 import com.example.realworld.repository.DoobieUserRepository
+import com.example.realworld.security.Pbkdf2PasswordHasher
 import com.example.realworld.service.UserService
 import com.github.plokhotnyuk.jsoniter_scala.core.readFromString
 import fs2.Stream
@@ -37,7 +38,7 @@ class HttpServerSpec extends CatsEffectSuite:
       dbName <- Resource.eval(IO(s"http-app-${UUID.randomUUID().toString.replace("-", "")}"))
       transactor <- Database.transactor[IO](TestDatabaseConfig.forTest(dbName))
       _ <- Resource.eval(Database.initialize[IO](transactor))
-      userRepository = DoobieUserRepository[IO](transactor)
+      userRepository = DoobieUserRepository[IO](transactor, Pbkdf2PasswordHasher[IO]())
       userService = UserService.live[IO](userRepository, authToken)
     yield Endpoints[IO](userService, authToken).routes.orNotFound
   )
@@ -123,6 +124,97 @@ class HttpServerSpec extends CatsEffectSuite:
         profileResponse <- httpApp.run(profileRequest)
         _ = assertEquals(profileResponse.status, Status.Ok)
         _ <- assertProfilePayload(profileResponse, "Mallory", None, None, expectedFollowing = false)
+      yield ()
+
+    result
+
+  test("follow and unfollow profile endpoints update following status when authenticated"):
+    val httpApp = httpAppFixture()
+    val followerPayload =
+      """{"user":{"username":"Follower","email":"follower@example.com","password":"secret"}}"""
+    val followeePayload =
+      """{"user":{"username":"Leader","email":"leader@example.com","password":"secret"}}"""
+
+    val followerRequest = Request[IO](
+      Method.POST,
+      uri"/api/users",
+      headers = Headers(`Content-Type`(MediaType.application.json)),
+      body = Stream.emits(followerPayload.getBytes(StandardCharsets.UTF_8)).covary[IO]
+    )
+
+    val followeeRequest = Request[IO](
+      Method.POST,
+      uri"/api/users",
+      headers = Headers(`Content-Type`(MediaType.application.json)),
+      body = Stream.emits(followeePayload.getBytes(StandardCharsets.UTF_8)).covary[IO]
+    )
+
+    val result =
+      for
+        followerResponse <- httpApp.run(followerRequest)
+        _ = assertEquals(followerResponse.status, Status.Ok)
+        (followerUserResponse, _) <-
+          assertUserPayload(followerResponse, "follower@example.com", "Follower")
+        followeeResponse <- httpApp.run(followeeRequest)
+        _ = assertEquals(followeeResponse.status, Status.Ok)
+        _ <- assertUserPayload(followeeResponse, "leader@example.com", "Leader")
+        authHeaders = Headers(
+          Authorization(Credentials.Token(AuthScheme.Bearer, followerUserResponse.user.token))
+        )
+        preFollowResponse <-
+          httpApp.run(Request[IO](Method.GET, uri"/api/profiles/Leader", headers = authHeaders))
+        _ = assertEquals(preFollowResponse.status, Status.Ok)
+        _ <- assertProfilePayload(
+          preFollowResponse,
+          "Leader",
+          None,
+          None,
+          expectedFollowing = false
+        )
+        followResponse <-
+          httpApp.run(
+            Request[IO](Method.POST, uri"/api/profiles/Leader/follow", headers = authHeaders)
+          )
+        _ = assertEquals(followResponse.status, Status.Ok)
+        _ <- assertProfilePayload(
+          followResponse,
+          "Leader",
+          None,
+          None,
+          expectedFollowing = true
+        )
+        postFollowResponse <-
+          httpApp.run(Request[IO](Method.GET, uri"/api/profiles/Leader", headers = authHeaders))
+        _ = assertEquals(postFollowResponse.status, Status.Ok)
+        _ <- assertProfilePayload(
+          postFollowResponse,
+          "Leader",
+          None,
+          None,
+          expectedFollowing = true
+        )
+        unfollowResponse <-
+          httpApp.run(
+            Request[IO](Method.DELETE, uri"/api/profiles/Leader/follow", headers = authHeaders)
+          )
+        _ = assertEquals(unfollowResponse.status, Status.Ok)
+        _ <- assertProfilePayload(
+          unfollowResponse,
+          "Leader",
+          None,
+          None,
+          expectedFollowing = false
+        )
+        postUnfollowResponse <-
+          httpApp.run(Request[IO](Method.GET, uri"/api/profiles/Leader", headers = authHeaders))
+        _ = assertEquals(postUnfollowResponse.status, Status.Ok)
+        _ <- assertProfilePayload(
+          postUnfollowResponse,
+          "Leader",
+          None,
+          None,
+          expectedFollowing = false
+        )
       yield ()
 
     result

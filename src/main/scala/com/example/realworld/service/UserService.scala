@@ -2,6 +2,7 @@ package com.example.realworld.service
 import cats.effect.Async
 import cats.effect.Sync
 import cats.syntax.all.*
+import com.example.realworld.NotFound
 import com.example.realworld.Unauthorized
 import com.example.realworld.auth.AuthToken
 import com.example.realworld.model.NewUser
@@ -9,6 +10,7 @@ import com.example.realworld.model.Profile
 import com.example.realworld.model.UpdateUser
 import com.example.realworld.model.User
 import com.example.realworld.model.UserId
+import com.example.realworld.repository.StoredProfile
 import com.example.realworld.repository.StoredUser
 import com.example.realworld.repository.UserRepository
 
@@ -18,6 +20,8 @@ trait UserService[F[_]]:
   def findById(userId: UserId): F[User]
   def update(userId: UserId, update: UpdateUser): F[User]
   def findProfile(viewer: Option[UserId], username: String): F[Option[Profile]]
+  def follow(followerId: UserId, username: String): F[Profile]
+  def unfollow(followerId: UserId, username: String): F[Profile]
 
 final class LiveUserService[F[_]: Sync](
     userRepository: UserRepository[F],
@@ -55,17 +59,32 @@ final class LiveUserService[F[_]: Sync](
       case None => Sync[F].raiseError(Unauthorized())
     }
 
+  private def toProfile(profile: StoredProfile): Profile =
+    Profile(
+      username = profile.user.username,
+      bio = profile.user.bio,
+      image = profile.user.image,
+      following = profile.following
+    )
+
   override def findProfile(viewer: Option[UserId], username: String): F[Option[Profile]] =
-    userRepository.findByUsername(username).map { maybeUser =>
-      maybeUser.map { user =>
-        Profile(
-          username = user.username,
-          bio = user.bio,
-          image = user.image,
-          following = false // following relationships not implemented yet
-        )
+    userRepository.findProfile(viewer, username).map(_.map(toProfile))
+
+  override def follow(followerId: UserId, username: String): F[Profile] =
+    userRepository
+      .follow(followerId, username)
+      .flatMap {
+        case Some(profile) => Sync[F].pure(toProfile(profile))
+        case None => Sync[F].raiseError(NotFound())
       }
-    }
+
+  override def unfollow(followerId: UserId, username: String): F[Profile] =
+    userRepository
+      .unfollow(followerId, username)
+      .flatMap {
+        case Some(profile) => Sync[F].pure(toProfile(profile))
+        case None => Sync[F].raiseError(NotFound())
+      }
 
 object UserService:
   def live[F[_]: Async](

@@ -6,7 +6,6 @@ import com.example.realworld.model.NewUser
 import com.example.realworld.model.UpdateUser
 import com.example.realworld.model.UserId
 import com.example.realworld.security.PasswordHasher
-import com.example.realworld.security.Pbkdf2PasswordHasher
 import doobie.ConnectionIO
 import doobie.Read
 import doobie.Transactor
@@ -17,7 +16,9 @@ trait UserRepository[F[_]]:
   def authenticate(email: String, password: String): F[Option[StoredUser]]
   def findById(id: UserId): F[Option[StoredUser]]
   def update(id: UserId, update: UpdateUser): F[Option[StoredUser]]
-  def findByUsername(username: String): F[Option[StoredUser]]
+  def findProfile(viewer: Option[UserId], username: String): F[Option[StoredProfile]]
+  def follow(followerId: UserId, username: String): F[Option[StoredProfile]]
+  def unfollow(followerId: UserId, username: String): F[Option[StoredProfile]]
 
 final case class StoredUser(
     id: UserId,
@@ -27,10 +28,44 @@ final case class StoredUser(
     image: Option[String]
 ) derives Read
 
-final class DoobieUserRepository[F[_]: Async](
+final case class StoredProfile(
+    user: StoredUser,
+    following: Boolean
+)
+
+final case class DoobieUserRepository[F[_]: Async](
     xa: Transactor[F],
     passwordHasher: PasswordHasher[F]
 ) extends UserRepository[F]:
+  private def selectByUsername(username: String): ConnectionIO[Option[StoredUser]] =
+    sql"""
+      SELECT id, email, username, bio, image
+      FROM users
+      WHERE username = $username
+    """.query[StoredUser].option
+
+  private def selectFollowing(followerId: UserId, followedId: UserId): ConnectionIO[Boolean] =
+    sql"""
+      SELECT EXISTS (
+        SELECT 1
+        FROM user_follows
+        WHERE follower_id = $followerId AND followed_id = $followedId
+      )
+    """.query[Boolean].unique
+
+  private def insertFollow(followerId: UserId, followedId: UserId): ConnectionIO[Unit] =
+    sql"""
+      INSERT INTO user_follows (follower_id, followed_id)
+      VALUES ($followerId, $followedId)
+      ON CONFLICT DO NOTHING
+    """.update.run.void
+
+  private def deleteFollow(followerId: UserId, followedId: UserId): ConnectionIO[Unit] =
+    sql"""
+      DELETE FROM user_follows
+      WHERE follower_id = $followerId AND followed_id = $followedId
+    """.update.run.void
+
   override def create(input: NewUser): F[StoredUser] =
     for
       hashedPassword <- passwordHasher.hash(input.password)
@@ -120,19 +155,44 @@ final class DoobieUserRepository[F[_]: Async](
         .transact(xa)
     }
 
-  override def findByUsername(username: String): F[Option[StoredUser]] =
-    sql"""
-      SELECT id, email, username, bio, image
-      FROM users
-      WHERE username = $username
-    """.query[StoredUser].option.transact(xa)
+  override def findProfile(viewer: Option[UserId], username: String): F[Option[StoredProfile]] =
+    (for
+      maybeUser <- selectByUsername(username)
+      profile <- maybeUser match
+        case Some(user) =>
+          viewer match
+            case Some(viewerId) if viewerId != user.id =>
+              selectFollowing(viewerId, user.id).map(isFollowing =>
+                Some(StoredProfile(user, following = isFollowing))
+              )
+            case _ =>
+              Option(StoredProfile(user, following = false)).pure[ConnectionIO]
+        case None =>
+          Option.empty[StoredProfile].pure[ConnectionIO]
+    yield profile).transact(xa)
 
-object DoobieUserRepository:
-  def apply[F[_]: Async](xa: Transactor[F]): DoobieUserRepository[F] =
-    new DoobieUserRepository[F](xa, Pbkdf2PasswordHasher[F]())
+  override def follow(followerId: UserId, username: String): F[Option[StoredProfile]] =
+    (for
+      maybeUser <- selectByUsername(username)
+      profile <- maybeUser match
+        case Some(user) =>
+          val action =
+            if followerId == user.id then ().pure[ConnectionIO]
+            else insertFollow(followerId, user.id)
+          action.as(Some(StoredProfile(user, following = followerId != user.id)))
+        case None =>
+          Option.empty[StoredProfile].pure[ConnectionIO]
+    yield profile).transact(xa)
 
-  def apply[F[_]: Async](
-      xa: Transactor[F],
-      passwordHasher: PasswordHasher[F]
-  ): DoobieUserRepository[F] =
-    new DoobieUserRepository[F](xa, passwordHasher)
+  override def unfollow(followerId: UserId, username: String): F[Option[StoredProfile]] =
+    (for
+      maybeUser <- selectByUsername(username)
+      profile <- maybeUser match
+        case Some(user) =>
+          val action =
+            if followerId == user.id then ().pure[ConnectionIO]
+            else deleteFollow(followerId, user.id)
+          action.as(Some(StoredProfile(user, following = false)))
+        case None =>
+          Option.empty[StoredProfile].pure[ConnectionIO]
+    yield profile).transact(xa)
