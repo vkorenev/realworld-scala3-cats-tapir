@@ -5,11 +5,14 @@ import cats.effect.Resource
 import com.example.realworld.auth.JwtAuthToken
 import com.example.realworld.db.Database
 import com.example.realworld.db.TestDatabaseConfig
+import com.example.realworld.model.ArticleResponse
 import com.example.realworld.model.ProfileResponse
 import com.example.realworld.model.UserId
 import com.example.realworld.model.UserResponse
+import com.example.realworld.repository.DoobieArticleRepository
 import com.example.realworld.repository.DoobieUserRepository
 import com.example.realworld.security.Pbkdf2PasswordHasher
+import com.example.realworld.service.ArticleService
 import com.example.realworld.service.UserService
 import com.github.plokhotnyuk.jsoniter_scala.core.readFromString
 import fs2.Stream
@@ -27,6 +30,7 @@ import org.http4s.headers.`Content-Type`
 import org.http4s.implicits.*
 
 import java.nio.charset.StandardCharsets
+import java.time.Instant
 import java.util.UUID
 
 class HttpServerSpec extends CatsEffectSuite:
@@ -40,7 +44,9 @@ class HttpServerSpec extends CatsEffectSuite:
       _ <- Resource.eval(Database.initialize[IO](transactor))
       userRepository = DoobieUserRepository[IO](transactor, Pbkdf2PasswordHasher[IO]())
       userService = UserService.live[IO](userRepository, authToken)
-    yield Endpoints[IO](userService, authToken).routes.orNotFound
+      articleRepository = DoobieArticleRepository[IO](transactor)
+      articleService = ArticleService.live[IO](articleRepository)
+    yield Endpoints[IO](userService, articleService, authToken).routes.orNotFound
   )
 
   override def munitFixtures = List(httpAppFixture)
@@ -79,6 +85,34 @@ class HttpServerSpec extends CatsEffectSuite:
       _ = assertEquals(decoded.profile.following, expectedFollowing)
     yield ()
 
+  private def assertArticlePayload(
+      response: Response[IO],
+      expectedSlug: String,
+      expectedTitle: String,
+      expectedDescription: String,
+      expectedBody: String,
+      expectedTags: List[String],
+      expectedAuthorUsername: String
+  ): IO[ArticleResponse] =
+    for
+      body <- response.as[String]
+      decoded = readFromString[ArticleResponse](body)
+      article = decoded.article
+      _ = assertEquals(article.slug, expectedSlug)
+      _ = assertEquals(article.title, expectedTitle)
+      _ = assertEquals(article.description, expectedDescription)
+      _ = assertEquals(article.body, expectedBody)
+      _ = assertEquals(article.tagList, expectedTags)
+      _ = assertEquals(article.favorited, false)
+      _ = assertEquals(article.favoritesCount, 0)
+      _ = assert(!article.createdAt.isBefore(Instant.EPOCH), clue(article.createdAt))
+      _ = assert(!article.updatedAt.isBefore(article.createdAt), clue(article.updatedAt))
+      _ = assertEquals(article.author.username, expectedAuthorUsername)
+      _ = assertEquals(article.author.following, false)
+      _ = assertEquals(article.author.bio, None)
+      _ = assertEquals(article.author.image, None)
+    yield decoded
+
   test("liveness endpoint returns no content"):
     val httpApp = httpAppFixture()
     val request = Request[IO](Method.GET, uri"/__health/liveness")
@@ -103,6 +137,53 @@ class HttpServerSpec extends CatsEffectSuite:
         assertEquals(response.status, Status.Ok)
         assertUserPayload(response, "jake@jake.jake", "Jacob").map(_ => ())
       }
+
+  test("create article endpoint creates a new article for the authenticated user"):
+    val httpApp = httpAppFixture()
+    val registerPayload =
+      """{"user":{"username":"Jake","email":"jake@example.com","password":"jakepassword"}}"""
+    val registerRequest = Request[IO](
+      Method.POST,
+      uri"/api/users",
+      headers = Headers(`Content-Type`(MediaType.application.json)),
+      body = Stream.emits(registerPayload.getBytes(StandardCharsets.UTF_8)).covary[IO]
+    )
+
+    val articlePayload =
+      """{"article":{"title":"How to train your dragon","description":"Ever wonder how?","body":"You have to believe","tagList":["reactjs","angularjs","dragons"]}}"""
+
+    val result =
+      for
+        registerResponse <- httpApp.run(registerRequest)
+        _ = assertEquals(registerResponse.status, Status.Ok)
+        (registeredUserResponse, _) <-
+          assertUserPayload(registerResponse, "jake@example.com", "Jake")
+        token = registeredUserResponse.user.token
+        createRequest = Request[IO](
+          Method.POST,
+          uri"/api/articles",
+          headers = Headers(
+            Authorization(Credentials.Token(AuthScheme.Bearer, token)),
+            `Content-Type`(MediaType.application.json)
+          ),
+          body = Stream.emits(articlePayload.getBytes(StandardCharsets.UTF_8)).covary[IO]
+        )
+        createResponse <- httpApp.run(createRequest)
+        _ = assertEquals(createResponse.status, Status.Created)
+        articleResponse <-
+          assertArticlePayload(
+            createResponse,
+            expectedSlug = "how-to-train-your-dragon",
+            expectedTitle = "How to train your dragon",
+            expectedDescription = "Ever wonder how?",
+            expectedBody = "You have to believe",
+            expectedTags = List("reactjs", "angularjs", "dragons"),
+            expectedAuthorUsername = "Jake"
+          )
+        _ = assertEquals(articleResponse.article.author.username, "Jake")
+      yield ()
+
+    result
 
   test("profile endpoint returns user profile without authentication"):
     val httpApp = httpAppFixture()

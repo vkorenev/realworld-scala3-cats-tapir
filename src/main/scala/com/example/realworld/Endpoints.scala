@@ -4,12 +4,15 @@ import cats.ApplicativeThrow
 import cats.effect.Async
 import cats.syntax.all.*
 import com.example.realworld.auth.AuthToken
+import com.example.realworld.model.ArticleResponse
 import com.example.realworld.model.LoginUserRequest
+import com.example.realworld.model.NewArticleRequest
 import com.example.realworld.model.NewUserRequest
 import com.example.realworld.model.ProfileResponse
 import com.example.realworld.model.UpdateUserRequest
 import com.example.realworld.model.UserId
 import com.example.realworld.model.UserResponse
+import com.example.realworld.service.ArticleService
 import com.example.realworld.service.UserService
 import org.http4s.HttpRoutes
 import sttp.model.StatusCode
@@ -22,7 +25,11 @@ import sttp.tapir.server.interceptor.cors.CORSConfig
 import sttp.tapir.server.interceptor.cors.CORSInterceptor
 import sttp.tapir.swagger.bundle.SwaggerInterpreter
 
-case class Endpoints[F[_]: Async](userService: UserService[F], authToken: AuthToken[F]):
+case class Endpoints[F[_]: Async](
+    userService: UserService[F],
+    articleService: ArticleService[F],
+    authToken: AuthToken[F]
+):
   /** API specification uses non-standard authentication scheme */
   private val TokenAuthScheme = "Token"
 
@@ -145,6 +152,19 @@ case class Endpoints[F[_]: Async](userService: UserService[F], authToken: AuthTo
       userService.unfollow(followerId, username).map(ProfileResponse.apply)
     }
 
+  private def createArticleEndpoint = secureEndpoint.post
+    .in("api" / "articles")
+    .in(jsonBody[NewArticleRequest])
+    .out(jsonBody[ArticleResponse])
+    .out(statusCode(StatusCode.Created))
+    .description("Create an article")
+    .tag("Articles")
+    .serverLogicRecoverErrors { authorId => request =>
+      articleService
+        .create(authorId, request.article)
+        .map(ArticleResponse.apply)
+    }
+
   def routes: HttpRoutes[F] =
     val serverEndpoints = List(
       livenessEndpoint,
@@ -154,7 +174,8 @@ case class Endpoints[F[_]: Async](userService: UserService[F], authToken: AuthTo
       updateUserEndpoint,
       profileEndpoint,
       followProfileEndpoint,
-      unfollowProfileEndpoint
+      unfollowProfileEndpoint,
+      createArticleEndpoint
     )
 
     val swaggerEndpoints =
