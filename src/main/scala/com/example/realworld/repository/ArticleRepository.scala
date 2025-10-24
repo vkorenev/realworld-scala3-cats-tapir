@@ -9,14 +9,18 @@ import com.example.realworld.model.UserId
 import doobie.ConnectionIO
 import doobie.Read
 import doobie.Transactor
+import doobie.h2.implicits.*
 import doobie.implicits.*
-import doobie.implicits.legacy.instant.*
+import doobie.util.fragments.whereAndOpt
+import doobie.util.meta.Meta
 import doobie.util.update.Update
 
 import java.time.Instant
 
 trait ArticleRepository[F[_]]:
   def create(authorId: UserId, baseSlug: String, article: NewArticle): F[StoredArticle]
+  def list(filters: ArticleFilters, pagination: Pagination): F[ArticlePage]
+  def feed(userId: UserId, pagination: Pagination): F[ArticlePage]
 
 final case class StoredArticle(
     id: ArticleId,
@@ -30,7 +34,42 @@ final case class StoredArticle(
     author: StoredUser
 )
 
+final case class ArticleFilters(
+    tag: Option[String],
+    author: Option[String],
+    favorited: Option[String]
+)
+
+final case class Pagination(limit: Int, offset: Int)
+
+final case class ArticlePage(articles: List[StoredArticle], articlesCount: Int)
+
 final class DoobieArticleRepository[F[_]: Async](xa: Transactor[F]) extends ArticleRepository[F]:
+  private given Meta[List[String]] =
+    Meta.Advanced
+      .array[String]("VARCHAR", "VARCHAR ARRAY", "ARRAY")
+      .imap(_.toList)(_.toArray)
+
+  private def filtersFragment(filters: ArticleFilters) =
+    whereAndOpt(
+      filters.author.map(author => fr"u.username = $author"),
+      filters.tag.map(tag => fr"""
+          EXISTS (
+            SELECT 1
+            FROM article_tags tag_filter
+            WHERE tag_filter.article_id = a.id AND tag_filter.tag = $tag
+          )
+        """),
+      filters.favorited.map(username => fr"""
+          EXISTS (
+            SELECT 1
+            FROM article_favorites fav
+            JOIN users fav_user ON fav.user_id = fav_user.id
+            WHERE fav.article_id = a.id AND fav_user.username = $username
+          )
+        """)
+    )
+
   final private case class ArticleRow(
       id: ArticleId,
       slug: String,
@@ -121,4 +160,130 @@ final class DoobieArticleRepository[F[_]: Async](xa: Transactor[F]) extends Arti
       createdAt = row.createdAt,
       updatedAt = row.updatedAt,
       author = author
+    )).transact(xa)
+
+  private def selectArticlesQuery(
+      filters: ArticleFilters,
+      limit: Int,
+      offset: Int
+  ): ConnectionIO[List[(ArticleRow, StoredUser, Option[List[String]])]] =
+    sql"""
+      SELECT a.id,
+             a.slug,
+             a.title,
+             a.description,
+             a.body,
+             a.created_at,
+             a.updated_at,
+             a.author_id,
+             u.id,
+             u.email,
+             u.username,
+             u.bio,
+             u.image,
+             (
+               SELECT ARRAY_AGG(DISTINCT tag)
+               FROM article_tags tags
+               WHERE tags.article_id = a.id
+             ) AS tags
+      FROM articles a
+      JOIN users u ON a.author_id = u.id
+      ${filtersFragment(filters)}
+      ORDER BY a.created_at DESC, a.id DESC
+      LIMIT $limit OFFSET $offset
+    """.query[(ArticleRow, StoredUser, Option[List[String]])].to[List]
+
+  private def selectArticlesCount(filters: ArticleFilters): ConnectionIO[Int] =
+    sql"""
+      SELECT COUNT(*)
+      FROM (
+        SELECT DISTINCT a.id
+        FROM articles a
+        JOIN users u ON a.author_id = u.id
+        ${filtersFragment(filters)}
+      ) counted
+    """.query[Int].unique
+
+  private def toStoredArticles(
+      rows: List[(ArticleRow, StoredUser, Option[List[String]])]
+  ): List[StoredArticle] =
+    rows.map { case (row, author, maybeTags) =>
+      StoredArticle(
+        id = row.id,
+        slug = row.slug,
+        title = row.title,
+        description = row.description,
+        body = row.body,
+        tagList = maybeTags.map(_.distinct).getOrElse(Nil),
+        createdAt = row.createdAt,
+        updatedAt = row.updatedAt,
+        author = author
+      )
+    }
+
+  override def list(filters: ArticleFilters, pagination: Pagination): F[ArticlePage] =
+    val normalizedLimit = pagination.limit.max(0)
+    val normalizedOffset = pagination.offset.max(0)
+
+    (for
+      rows <- selectArticlesQuery(filters, normalizedLimit, normalizedOffset)
+      total <- selectArticlesCount(filters)
+    yield ArticlePage(
+      articles = toStoredArticles(rows),
+      articlesCount = total
+    )).transact(xa)
+
+  private def selectFeedArticles(
+      userId: UserId,
+      limit: Int,
+      offset: Int
+  ): ConnectionIO[List[(ArticleRow, StoredUser, Option[List[String]])]] =
+    sql"""
+      SELECT a.id,
+             a.slug,
+             a.title,
+             a.description,
+             a.body,
+             a.created_at,
+             a.updated_at,
+             a.author_id,
+             u.id,
+             u.email,
+             u.username,
+             u.bio,
+             u.image,
+             (
+               SELECT ARRAY_AGG(DISTINCT tag)
+               FROM article_tags tags
+               WHERE tags.article_id = a.id
+             ) AS tags
+      FROM articles a
+      JOIN user_follows f ON f.followed_id = a.author_id
+      JOIN users u ON a.author_id = u.id
+      WHERE f.follower_id = $userId
+      ORDER BY a.created_at DESC, a.id DESC
+      LIMIT $limit OFFSET $offset
+    """.query[(ArticleRow, StoredUser, Option[List[String]])].to[List]
+
+  private def selectFeedCount(userId: UserId): ConnectionIO[Int] =
+    sql"""
+      SELECT COUNT(*)
+      FROM (
+        SELECT DISTINCT a.id
+        FROM articles a
+        JOIN user_follows f ON f.followed_id = a.author_id
+        WHERE f.follower_id = $userId
+      ) counted
+    """.query[Int].unique
+
+  override def feed(userId: UserId, pagination: Pagination): F[ArticlePage] =
+    val normalizedLimit = pagination.limit.max(0)
+    val normalizedOffset = pagination.offset.max(0)
+
+    (for
+      rows <- selectFeedArticles(userId, normalizedLimit, normalizedOffset)
+      total <- selectFeedCount(userId)
+    yield ArticlePage(
+      articles = toStoredArticles(rows),
+      articlesCount = total
     )).transact(xa)

@@ -30,3 +30,22 @@ final case class Article(
       Schema
 
 final case class ArticleResponse(article: Article) derives ConfiguredJsonValueCodec, Schema
+
+final case class ArticleSummary(
+    slug: String,
+    title: String,
+    description: String,
+    tagList: List[String],
+    createdAt: Instant,
+    updatedAt: Instant,
+    favorited: Boolean,
+    favoritesCount: Int,
+    author: Profile
+) derives ConfiguredJsonValueCodec,
+      Schema
+
+final case class MultipleArticlesResponse(
+    articles: List[ArticleSummary],
+    articlesCount: Int
+) derives ConfiguredJsonValueCodec,
+      Schema

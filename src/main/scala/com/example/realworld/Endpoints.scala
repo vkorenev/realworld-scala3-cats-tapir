@@ -6,12 +6,15 @@ import cats.syntax.all.*
 import com.example.realworld.auth.AuthToken
 import com.example.realworld.model.ArticleResponse
 import com.example.realworld.model.LoginUserRequest
+import com.example.realworld.model.MultipleArticlesResponse
 import com.example.realworld.model.NewArticleRequest
 import com.example.realworld.model.NewUserRequest
 import com.example.realworld.model.ProfileResponse
 import com.example.realworld.model.UpdateUserRequest
 import com.example.realworld.model.UserId
 import com.example.realworld.model.UserResponse
+import com.example.realworld.repository.ArticleFilters
+import com.example.realworld.repository.Pagination
 import com.example.realworld.service.ArticleService
 import com.example.realworld.service.UserService
 import org.http4s.HttpRoutes
@@ -32,6 +35,15 @@ case class Endpoints[F[_]: Async](
 ):
   /** API specification uses non-standard authentication scheme */
   private val TokenAuthScheme = "Token"
+  private val DefaultArticleLimit = 20
+
+  private def normalizeLimit(limit: Int): Int =
+    if limit <= 0 then DefaultArticleLimit
+    else limit
+
+  private def normalizeOffset(offset: Int): Int =
+    if offset < 0 then 0
+    else offset
 
   private def tokenAuth[T: Codec[List[String], *, CodecFormat.TextPlain]](
       challenge: WWWAuthenticateChallenge = WWWAuthenticateChallenge(TokenAuthScheme)
@@ -152,6 +164,42 @@ case class Endpoints[F[_]: Async](
       userService.unfollow(followerId, username).map(ProfileResponse.apply)
     }
 
+  private def feedArticlesEndpoint = secureEndpoint.get
+    .in("api" / "articles" / "feed")
+    .in(query[Int]("limit").default(DefaultArticleLimit))
+    .in(query[Int]("offset").default(0))
+    .out(jsonBody[MultipleArticlesResponse])
+    .description("Get most recent articles from users you follow")
+    .tag("Articles")
+    .serverLogicRecoverErrors { userId => params =>
+      val (limit, offset) = params
+      val pagination = Pagination(
+        limit = normalizeLimit(limit),
+        offset = normalizeOffset(offset)
+      )
+      articleService.feed(userId, pagination)
+    }
+
+  private def listArticlesEndpoint = optionallySecureEndpoint.get
+    .in("api" / "articles")
+    .in(query[Option[String]]("tag"))
+    .in(query[Option[String]]("author"))
+    .in(query[Option[String]]("favorited"))
+    .in(query[Int]("limit").default(DefaultArticleLimit))
+    .in(query[Int]("offset").default(0))
+    .out(jsonBody[MultipleArticlesResponse])
+    .description("Get most recent articles globally")
+    .tag("Articles")
+    .serverLogicRecoverErrors { userId => params =>
+      val (tag, author, favorited, limit, offset) = params
+      val filters = ArticleFilters(tag = tag, author = author, favorited = favorited)
+      val pagination = Pagination(
+        limit = normalizeLimit(limit),
+        offset = normalizeOffset(offset)
+      )
+      articleService.list(userId, filters, pagination)
+    }
+
   private def createArticleEndpoint = secureEndpoint.post
     .in("api" / "articles")
     .in(jsonBody[NewArticleRequest])
@@ -175,6 +223,8 @@ case class Endpoints[F[_]: Async](
       profileEndpoint,
       followProfileEndpoint,
       unfollowProfileEndpoint,
+      feedArticlesEndpoint,
+      listArticlesEndpoint,
       createArticleEndpoint
     )
 

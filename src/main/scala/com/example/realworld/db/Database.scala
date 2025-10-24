@@ -57,4 +57,14 @@ object Database:
             FOREIGN KEY (article_id) REFERENCES articles(id) ON DELETE CASCADE
           )
         """.update.run
+      _ <-
+        sql"""
+          CREATE TABLE IF NOT EXISTS article_favorites (
+            article_id BIGINT NOT NULL,
+            user_id BIGINT NOT NULL,
+            PRIMARY KEY (article_id, user_id),
+            FOREIGN KEY (article_id) REFERENCES articles(id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+          )
+        """.update.run
     yield ()).transact(xa)
