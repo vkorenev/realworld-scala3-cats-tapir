@@ -63,6 +63,7 @@ lazy val root = (project in file("."))
       "org.tpolecat" %% "doobie-core" % doobieVersion,
       "org.tpolecat" %% "doobie-h2" % doobieVersion exclude ("com.h2database", "h2"),
       "org.tpolecat" %% "doobie-hikari" % doobieVersion,
+      "org.tpolecat" %% "doobie-munit" % doobieVersion % Test,
       "org.typelevel" %% "cats-core" % catsVersion,
       "org.typelevel" %% "cats-effect" % catsEffectVersion,
       "org.typelevel" %% "munit-cats-effect" % munitCatsEffectVersion % Test

@@ -64,9 +64,12 @@ final class LiveArticleService[F[_]: Async](articleRepository: ArticleRepository
 
   override def create(authorId: UserId, article: NewArticle): F[Article] =
     val baseSlug = slugify(article.title)
-    articleRepository
-      .create(authorId, baseSlug, article)
-      .map(toArticle(_, favorited = false, favoritesCount = 0, following = false))
+    for
+      at <- Async[F].realTimeInstant
+      article <- articleRepository
+        .create(authorId, baseSlug, article, at)
+        .map(toArticle(_, favorited = false, favoritesCount = 0, following = false))
+    yield article
 
   private def toArticleSummary(
       stored: StoredArticle,

@@ -2,6 +2,7 @@ package com.example.realworld.repository
 
 import cats.effect.Async
 import cats.syntax.all.*
+import com.example.realworld.db.Queries
 import com.example.realworld.model.NewUser
 import com.example.realworld.model.UpdateUser
 import com.example.realworld.model.UserId
@@ -38,42 +39,23 @@ final case class DoobieUserRepository[F[_]: Async](
     passwordHasher: PasswordHasher[F]
 ) extends UserRepository[F]:
   private def selectByUsername(username: String): ConnectionIO[Option[StoredUser]] =
-    sql"""
-      SELECT id, email, username, bio, image
-      FROM users
-      WHERE username = $username
-    """.query[StoredUser].option
+    Queries.selectByUsername(username).option
 
   private def selectFollowing(followerId: UserId, followedId: UserId): ConnectionIO[Boolean] =
-    sql"""
-      SELECT EXISTS (
-        SELECT 1
-        FROM user_follows
-        WHERE follower_id = $followerId AND followed_id = $followedId
-      )
-    """.query[Boolean].unique
+    Queries.selectFollowing(followerId, followedId).unique
 
   private def insertFollow(followerId: UserId, followedId: UserId): ConnectionIO[Unit] =
-    sql"""
-      INSERT INTO user_follows (follower_id, followed_id)
-      VALUES ($followerId, $followedId)
-      ON CONFLICT DO NOTHING
-    """.update.run.void
+    Queries.insertFollow(followerId, followedId).run.void
 
   private def deleteFollow(followerId: UserId, followedId: UserId): ConnectionIO[Unit] =
-    sql"""
-      DELETE FROM user_follows
-      WHERE follower_id = $followerId AND followed_id = $followedId
-    """.update.run.void
+    Queries.deleteFollow(followerId, followedId).run.void
 
   override def create(input: NewUser): F[StoredUser] =
     for
       hashedPassword <- passwordHasher.hash(input.password)
       id <-
-        sql"""
-          INSERT INTO users (username, email, password, bio, image)
-          VALUES (${input.username}, ${input.email}, $hashedPassword, NULL, NULL)
-        """.update
+        Queries
+          .insertUser(input.username, input.email, hashedPassword)
           .withUniqueGeneratedKeys[Long]("id")
           .transact(xa)
     yield StoredUser(
@@ -85,12 +67,8 @@ final case class DoobieUserRepository[F[_]: Async](
     )
 
   override def authenticate(email: String, password: String): F[Option[StoredUser]] =
-    sql"""
-      SELECT id, email, username, bio, image, password
-      FROM users
-      WHERE email = $email
-    """
-      .query[(StoredUser, String)]
+    Queries
+      .selectByEmailWithPassword(email)
       .option
       .transact(xa)
       .flatMap {
@@ -103,21 +81,12 @@ final case class DoobieUserRepository[F[_]: Async](
       }
 
   override def findById(id: UserId): F[Option[StoredUser]] =
-    sql"""
-      SELECT id, email, username, bio, image
-      FROM users
-      WHERE id = $id
-    """.query[StoredUser].option.transact(xa)
+    Queries.selectById(id).option.transact(xa)
 
   override def update(id: UserId, update: UpdateUser): F[Option[StoredUser]] =
     update.password.traverse(passwordHasher.hash).flatMap { hashedPasswordOpt =>
-      sql"""
-        SELECT id, email, username, bio, image, password
-        FROM users
-        WHERE id = $id
-        FOR UPDATE
-      """
-        .query[(StoredUser, String)]
+      Queries
+        .selectByIdForUpdate(id)
         .option
         .flatMap {
           case Some((existing, currentPasswordHash)) =>
@@ -131,24 +100,26 @@ final case class DoobieUserRepository[F[_]: Async](
               case None => existing.image
             val updatedPasswordHash = hashedPasswordOpt.getOrElse(currentPasswordHash)
 
-            sql"""
-              UPDATE users
-              SET email = $updatedEmail,
-                  username = $updatedUsername,
-                  bio = $updatedBio,
-                  image = $updatedImage,
-                  password = $updatedPasswordHash
-              WHERE id = $id
-            """.update.run.as {
-              Some(
-                existing.copy(
-                  email = updatedEmail,
-                  username = updatedUsername,
-                  bio = updatedBio,
-                  image = updatedImage
-                )
+            Queries
+              .updateUser(
+                id = id,
+                email = updatedEmail,
+                username = updatedUsername,
+                bio = updatedBio,
+                image = updatedImage,
+                passwordHash = updatedPasswordHash
               )
-            }
+              .run
+              .as {
+                Some(
+                  existing.copy(
+                    email = updatedEmail,
+                    username = updatedUsername,
+                    bio = updatedBio,
+                    image = updatedImage
+                  )
+                )
+              }
           case None =>
             Option.empty[StoredUser].pure[ConnectionIO]
         }
