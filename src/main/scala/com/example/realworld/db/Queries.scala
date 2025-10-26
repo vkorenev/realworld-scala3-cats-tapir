@@ -9,8 +9,8 @@ import doobie.Query0
 import doobie.Read
 import doobie.Update
 import doobie.Update0
-import doobie.h2.implicits.*
 import doobie.implicits.*
+import doobie.postgres.implicits.*
 import doobie.util.fragment.Fragment
 import doobie.util.fragments.whereAndOpt
 import doobie.util.meta.Meta
@@ -145,8 +145,8 @@ object Queries:
 
   def selectArticles(
       filters: ArticleFilters,
-      limit: Int,
-      offset: Int
+      limit: Long,
+      offset: Long
   ): Query0[(ArticleRow, StoredUser, List[String])] =
     sql"""
       SELECT a.id,
@@ -187,8 +187,8 @@ object Queries:
 
   def selectFeedArticles(
       userId: UserId,
-      limit: Int,
-      offset: Int
+      limit: Long,
+      offset: Long
   ): Query0[(ArticleRow, StoredUser, List[String])] =
     sql"""
       SELECT a.id,

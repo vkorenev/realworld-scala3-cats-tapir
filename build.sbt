@@ -20,10 +20,11 @@ val http4sVersion = "0.23.32"
 val log4j2Version = "2.25.2"
 val munitVersion = "1.2.1"
 val munitCatsEffectVersion = "2.1.0"
+val testcontainersScalaVersion = "0.43.0"
 val tapirVersion = "1.11.50"
 val jsoniterScalaVersion = "2.38.3"
 val doobieVersion = "1.0.0-RC10"
-val h2Version = "2.4.240"
+val postgresVersion = "42.7.8"
 val jwtScalaVersion = "11.0.3"
 val pureconfigVersion = "0.17.9"
 
@@ -50,7 +51,7 @@ lazy val root = (project in file("."))
       "com.github.pureconfig" %% "pureconfig-cats-effect" % pureconfigVersion,
       "com.github.pureconfig" %% "pureconfig-core" % pureconfigVersion,
       "com.github.pureconfig" %% "pureconfig-generic-scala3" % pureconfigVersion,
-      "com.h2database" % "h2" % h2Version % Runtime,
+      "org.postgresql" % "postgresql" % postgresVersion % Runtime,
       "com.softwaremill.sttp.tapir" %% "tapir-core" % tapirVersion,
       "com.softwaremill.sttp.tapir" %% "tapir-http4s-server" % tapirVersion,
       "com.softwaremill.sttp.tapir" %% "tapir-jsoniter-scala" % tapirVersion,
@@ -61,12 +62,35 @@ lazy val root = (project in file("."))
       "org.http4s" %% "http4s-ember-server" % http4sVersion,
       "org.scalameta" %% "munit" % munitVersion % Test,
       "org.tpolecat" %% "doobie-core" % doobieVersion,
-      "org.tpolecat" %% "doobie-h2" % doobieVersion exclude ("com.h2database", "h2"),
+      "org.tpolecat" %% "doobie-postgres" % doobieVersion,
       "org.tpolecat" %% "doobie-hikari" % doobieVersion,
       "org.tpolecat" %% "doobie-munit" % doobieVersion % Test,
       "org.typelevel" %% "cats-core" % catsVersion,
       "org.typelevel" %% "cats-effect" % catsEffectVersion,
       "org.typelevel" %% "munit-cats-effect" % munitCatsEffectVersion % Test
+    ),
+    dependencyOverrides ++= log4j2Bom.key.value.bomDependencies,
+    Compile / run / fork := true,
+    javaOptions ++= jvmOptions,
+    testFrameworks += new TestFramework("munit.Framework"),
+    scalacOptions ++= Seq(
+      "-Wsafe-init",
+      "-Wunused:all",
+      "-source:3.7-migration",
+      "-Xmax-inlines:64"
+    )
+  )
+
+lazy val integration = (project in file("integration"))
+  .dependsOn(root % "compile->compile;test->test")
+  .settings(
+    log4j2Bom
+  )
+  .settings(
+    publish / skip := true,
+    libraryDependencies ++= (root / libraryDependencies).value ++ Seq(
+      "com.dimafeng" %% "testcontainers-scala-munit" % testcontainersScalaVersion % Test,
+      "com.dimafeng" %% "testcontainers-scala-postgresql" % testcontainersScalaVersion % Test
     ),
     dependencyOverrides ++= log4j2Bom.key.value.bomDependencies,
     Compile / run / fork := true,

@@ -4,6 +4,7 @@ import cats.effect.IO
 import cats.effect.Resource
 import com.example.realworld.auth.JwtAuthToken
 import com.example.realworld.db.Database
+import com.example.realworld.db.PostgresTestContainer
 import com.example.realworld.db.TestDatabaseConfig
 import com.example.realworld.model.ArticleResponse
 import com.example.realworld.model.ProfileResponse
@@ -40,7 +41,8 @@ class HttpServerSpec extends CatsEffectSuite:
     "http-app",
     for
       dbName <- Resource.eval(IO(s"http-app-${UUID.randomUUID().toString.replace("-", "")}"))
-      transactor <- Database.transactor[IO](TestDatabaseConfig.forTest(dbName))
+      container <- PostgresTestContainer.resource[IO](dbName)
+      transactor <- Database.transactor[IO](TestDatabaseConfig.fromContainer(container))
       _ <- Resource.eval(Database.initialize[IO](transactor))
       userRepository = DoobieUserRepository[IO](transactor, Pbkdf2PasswordHasher[IO]())
       userService = UserService.live[IO](userRepository, authToken)

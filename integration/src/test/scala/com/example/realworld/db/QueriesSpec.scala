@@ -19,7 +19,8 @@ class QueriesSpec extends CatsEffectSuite with IOChecker:
     "queries-transactor",
     for
       dbName <- Resource.eval(IO(s"queries-${UUID.randomUUID().toString.replace("-", "")}"))
-      xa <- Database.transactor[IO](TestDatabaseConfig.forTest(dbName))
+      container <- PostgresTestContainer.resource[IO](dbName)
+      xa <- Database.transactor[IO](TestDatabaseConfig.fromContainer(container))
       _ <- Resource.eval(Database.initialize[IO](xa))
     yield xa
   )
@@ -83,14 +84,14 @@ class QueriesSpec extends CatsEffectSuite with IOChecker:
   test("selectSlugsWithPrefix compiles"):
     check(selectSlugsWithPrefix(""))
 
-  test("selectArticles compiles with empty filters".ignore):
-    checkOutput(selectArticles(emptyFilters, limit = 0, offset = 0))
+  test("selectArticles compiles with empty filters"):
+    check(selectArticles(emptyFilters, limit = 0, offset = 0))
 
   test("selectArticlesCount compiles with empty filters"):
     check(selectArticlesCount(emptyFilters))
 
-  test("selectFeedArticles compiles".ignore):
-    checkOutput(selectFeedArticles(UserId(0), limit = 0, offset = 0))
+  test("selectFeedArticles compiles"):
+    check(selectFeedArticles(UserId(0), limit = 0, offset = 0))
 
   test("selectFeedCount compiles"):
     check(selectFeedCount(UserId(0)))
