@@ -71,6 +71,7 @@ lazy val root = (project in file("."))
     ),
     dependencyOverrides ++= log4j2Bom.key.value.bomDependencies,
     Compile / run / fork := true,
+    Test / fork := true,
     javaOptions ++= jvmOptions,
     testFrameworks += new TestFramework("munit.Framework"),
     scalacOptions ++= Seq(
@@ -95,6 +96,7 @@ lazy val integration = (project in file("integration"))
     ),
     dependencyOverrides ++= log4j2Bom.key.value.bomDependencies,
     Compile / run / fork := true,
+    Test / fork := true,
     javaOptions ++= jvmOptions,
     testFrameworks += new TestFramework("munit.Framework"),
     scalacOptions ++= Seq(
