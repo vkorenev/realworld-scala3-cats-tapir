@@ -22,4 +22,4 @@ jobs:
         if: github.ref == 'refs/heads/master'
         uses: scalacenter/sbt-dependency-submission@v3
         with:
-          configs-ignore: scala-doc-tool
+          configs-ignore: scala-tool scala-doc-tool test
