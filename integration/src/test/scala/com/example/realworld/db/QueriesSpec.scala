@@ -39,22 +39,22 @@ class QueriesSpec extends CatsEffectSuite with IOChecker:
 
   private val emptyFilters = ArticleFilters(tag = None, author = None, favorited = None)
 
-  test("insertUser compiles"):
+  test("insertUser"):
     check(insertUser("", "", ""))
 
-  test("selectByEmailWithPassword compiles"):
+  test("selectByEmailWithPassword"):
     check(selectByEmailWithPassword(""))
 
-  test("selectByUsername compiles"):
+  test("selectByUsername"):
     check(selectByUsername(""))
 
-  test("selectById compiles"):
+  test("selectById"):
     check(selectById(UserId(0)))
 
-  test("selectByIdForUpdate compiles"):
+  test("selectByIdForUpdate"):
     check(selectByIdForUpdate(UserId(0)))
 
-  test("updateUser compiles"):
+  test("updateUser"):
     check(
       updateUser(
         id = UserId(0),
@@ -66,32 +66,32 @@ class QueriesSpec extends CatsEffectSuite with IOChecker:
       )
     )
 
-  test("selectFollowing compiles"):
+  test("selectFollowing"):
     check(selectFollowing(UserId(0), UserId(0)))
 
-  test("insertFollow compiles"):
+  test("insertFollow"):
     check(insertFollow(UserId(0), UserId(0)))
 
-  test("deleteFollow compiles"):
+  test("deleteFollow"):
     check(deleteFollow(UserId(0), UserId(0)))
 
-  test("insertArticle compiles"):
+  test("insertArticle"):
     check(insertArticle("", sampleArticle, UserId(0), Instant.EPOCH))
 
-  test("insertArticleTag compiles"):
+  test("insertArticleTag"):
     check(insertArticleTag)
 
-  test("selectSlugsWithPrefix compiles"):
+  test("selectSlugsWithPrefix"):
     check(selectSlugsWithPrefix(""))
 
-  test("selectArticles compiles with empty filters"):
+  test("selectArticles with empty filters"):
     check(selectArticles(emptyFilters, limit = 0, offset = 0))
 
-  test("selectArticlesCount compiles with empty filters"):
+  test("selectArticlesCount with empty filters"):
     check(selectArticlesCount(emptyFilters))
 
-  test("selectFeedArticles compiles"):
+  test("selectFeedArticles"):
     check(selectFeedArticles(UserId(0), limit = 0, offset = 0))
 
-  test("selectFeedCount compiles"):
+  test("selectFeedCount"):
     check(selectFeedCount(UserId(0)))
