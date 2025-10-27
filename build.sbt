@@ -80,6 +80,7 @@ lazy val root = (project in file("."))
       "-Xmax-inlines:64"
     )
   )
+  .aggregate(LocalProject("integration"))
 
 lazy val integration = (project in file("integration"))
   .dependsOn(root % "compile->compile;test->test")
