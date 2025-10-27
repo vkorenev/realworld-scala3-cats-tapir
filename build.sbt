@@ -36,7 +36,7 @@ val jvmOptions = List(
   "-Djava.util.logging.manager=org.apache.logging.log4j.jul.LogManager"
 )
 
-lazy val root = (project in file("."))
+lazy val app = (project in file("app"))
   .settings(
     log4j2Bom
   )
@@ -81,16 +81,15 @@ lazy val root = (project in file("."))
       "-Xmax-inlines:64"
     )
   )
-  .aggregate(LocalProject("integration"))
 
 lazy val integration = (project in file("integration"))
-  .dependsOn(root % "compile->compile;test->test")
+  .dependsOn(app % "compile->compile;test->test")
   .settings(
     log4j2Bom
   )
   .settings(
     publish / skip := true,
-    libraryDependencies ++= (root / libraryDependencies).value ++ Seq(
+    libraryDependencies ++= Seq(
       "com.dimafeng" %% "testcontainers-scala-munit" % testcontainersScalaVersion % Test,
       "com.dimafeng" %% "testcontainers-scala-postgresql" % testcontainersScalaVersion % Test
     ),
@@ -106,3 +105,6 @@ lazy val integration = (project in file("integration"))
       "-Xmax-inlines:64"
     )
   )
+
+lazy val root = (project in file("."))
+  .aggregate(app, integration)
