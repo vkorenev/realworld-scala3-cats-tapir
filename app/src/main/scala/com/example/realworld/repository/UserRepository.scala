@@ -38,8 +38,8 @@ final case class DoobieUserRepository[F[_]: Async](
     xa: Transactor[F],
     passwordHasher: PasswordHasher[F]
 ) extends UserRepository[F]:
-  private def selectByUsername(username: String): ConnectionIO[Option[StoredUser]] =
-    Queries.selectByUsername(username).option
+  private def selectUserByUsername(username: String): ConnectionIO[Option[StoredUser]] =
+    Queries.selectUserByUsername(username).option
 
   private def selectFollowing(followerId: UserId, followedId: UserId): ConnectionIO[Boolean] =
     Queries.selectFollowing(followerId, followedId).unique
@@ -68,7 +68,7 @@ final case class DoobieUserRepository[F[_]: Async](
 
   override def authenticate(email: String, password: String): F[Option[StoredUser]] =
     Queries
-      .selectByEmailWithPassword(email)
+      .selectUserByEmailWithPassword(email)
       .option
       .transact(xa)
       .flatMap {
@@ -81,12 +81,12 @@ final case class DoobieUserRepository[F[_]: Async](
       }
 
   override def findById(id: UserId): F[Option[StoredUser]] =
-    Queries.selectById(id).option.transact(xa)
+    Queries.selectUserById(id).option.transact(xa)
 
   override def update(id: UserId, update: UpdateUser): F[Option[StoredUser]] =
     update.password.traverse(passwordHasher.hash).flatMap { hashedPasswordOpt =>
       Queries
-        .selectByIdForUpdate(id)
+        .selectUserByIdForUpdate(id)
         .option
         .flatMap {
           case Some((existing, currentPasswordHash)) =>
@@ -128,7 +128,7 @@ final case class DoobieUserRepository[F[_]: Async](
 
   override def findProfile(viewer: Option[UserId], username: String): F[Option[StoredProfile]] =
     (for
-      maybeUser <- selectByUsername(username)
+      maybeUser <- selectUserByUsername(username)
       profile <- maybeUser match
         case Some(user) =>
           viewer match
@@ -144,7 +144,7 @@ final case class DoobieUserRepository[F[_]: Async](
 
   override def follow(followerId: UserId, username: String): F[Option[StoredProfile]] =
     (for
-      maybeUser <- selectByUsername(username)
+      maybeUser <- selectUserByUsername(username)
       profile <- maybeUser match
         case Some(user) =>
           val action =
@@ -157,7 +157,7 @@ final case class DoobieUserRepository[F[_]: Async](
 
   override def unfollow(followerId: UserId, username: String): F[Option[StoredProfile]] =
     (for
-      maybeUser <- selectByUsername(username)
+      maybeUser <- selectUserByUsername(username)
       profile <- maybeUser match
         case Some(user) =>
           val action =

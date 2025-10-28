@@ -45,28 +45,28 @@ object Queries:
       VALUES ($username, $email, $passwordHash, NULL, NULL)
     """.update
 
-  def selectByEmailWithPassword(email: String): Query0[(StoredUser, String)] =
+  def selectUserByEmailWithPassword(email: String): Query0[(StoredUser, String)] =
     sql"""
       SELECT id, email, username, bio, image, password
       FROM users
       WHERE email = $email
     """.query[(StoredUser, String)]
 
-  def selectByUsername(username: String): Query0[StoredUser] =
+  def selectUserByUsername(username: String): Query0[StoredUser] =
     sql"""
       SELECT id, email, username, bio, image
       FROM users
       WHERE username = $username
     """.query[StoredUser]
 
-  def selectById(id: UserId): Query0[StoredUser] =
+  def selectUserById(id: UserId): Query0[StoredUser] =
     sql"""
       SELECT id, email, username, bio, image
       FROM users
       WHERE id = $id
     """.query[StoredUser]
 
-  def selectByIdForUpdate(id: UserId): Query0[(StoredUser, String)] =
+  def selectUserByIdForUpdate(id: UserId): Query0[(StoredUser, String)] =
     sql"""
       SELECT id, email, username, bio, image, password
       FROM users
@@ -125,7 +125,7 @@ object Queries:
       "INSERT INTO article_tags (article_id, tag) VALUES (?, ?)"
     )
 
-  def selectSlugsWithPrefix(pattern: String): Query0[String] =
+  def selectArticleSlugsWithPrefix(pattern: String): Query0[String] =
     sql"""
       SELECT slug
       FROM articles

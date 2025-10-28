@@ -42,17 +42,17 @@ class QueriesSpec extends CatsEffectSuite with IOChecker:
   test("insertUser"):
     check(insertUser("", "", ""))
 
-  test("selectByEmailWithPassword"):
-    check(selectByEmailWithPassword(""))
+  test("selectUserByEmailWithPassword"):
+    check(selectUserByEmailWithPassword(""))
 
-  test("selectByUsername"):
-    check(selectByUsername(""))
+  test("selectUserByUsername"):
+    check(selectUserByUsername(""))
 
-  test("selectById"):
-    check(selectById(UserId(0)))
+  test("selectUserById"):
+    check(selectUserById(UserId(0)))
 
-  test("selectByIdForUpdate"):
-    check(selectByIdForUpdate(UserId(0)))
+  test("selectUserByIdForUpdate"):
+    check(selectUserByIdForUpdate(UserId(0)))
 
   test("updateUser"):
     check(
@@ -81,8 +81,8 @@ class QueriesSpec extends CatsEffectSuite with IOChecker:
   test("insertArticleTag"):
     check(insertArticleTag)
 
-  test("selectSlugsWithPrefix"):
-    check(selectSlugsWithPrefix(""))
+  test("selectArticleSlugsWithPrefix"):
+    check(selectArticleSlugsWithPrefix(""))
 
   test("selectArticles with empty filters"):
     check(selectArticles(emptyFilters, limit = 0, offset = 0))

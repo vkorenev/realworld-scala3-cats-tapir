@@ -63,7 +63,7 @@ final class DoobieArticleRepository[F[_]: Async](xa: Transactor[F]) extends Arti
 
   private def loadSlugsWithPrefix(baseSlug: String): ConnectionIO[List[String]] =
     val prefixPattern = s"$baseSlug%"
-    Queries.selectSlugsWithPrefix(prefixPattern).to[List]
+    Queries.selectArticleSlugsWithPrefix(prefixPattern).to[List]
 
   private def ensureUniqueSlug(baseSlug: String): ConnectionIO[String] =
     loadSlugsWithPrefix(baseSlug).flatMap { existingSlugs =>
@@ -93,7 +93,7 @@ final class DoobieArticleRepository[F[_]: Async](xa: Transactor[F]) extends Arti
         .distinct
 
     (for
-      author <- Queries.selectById(authorId).unique
+      author <- Queries.selectUserById(authorId).unique
       slug <- ensureUniqueSlug(baseSlug)
       articleId <- insertArticle(authorId, slug, article, at)
       _ <- insertTags(articleId, sanitizedTags)
