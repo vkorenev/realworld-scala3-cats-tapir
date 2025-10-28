@@ -2,6 +2,7 @@ package com.example.realworld.db
 
 import cats.effect.IO
 import cats.effect.Resource
+import com.example.realworld.model.ArticleId
 import com.example.realworld.model.NewArticle
 import com.example.realworld.model.UserId
 import com.example.realworld.repository.ArticleFilters
@@ -78,8 +79,14 @@ class QueriesSpec extends CatsEffectSuite with IOChecker:
   test("insertArticle"):
     check(insertArticle("", sampleArticle, UserId(0), Instant.EPOCH))
 
+  test("updateArticle"):
+    check(updateArticle(ArticleId(0), "", "", "", "", Instant.EPOCH))
+
   test("insertArticleTag"):
     check(insertArticleTag)
+
+  test("deleteArticle"):
+    check(deleteArticle(ArticleId(0)))
 
   test("selectArticleSlugsWithPrefix"):
     check(selectArticleSlugsWithPrefix(""))

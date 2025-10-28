@@ -249,6 +249,144 @@ class HttpServerSpec extends CatsEffectSuite:
 
     result
 
+  test("update article endpoint updates existing article for the author"):
+    val httpApp = httpAppFixture()
+    val registerPayload =
+      """{"user":{"username":"Author","email":"author@example.com","password":"secretpass"}}"""
+    val registerRequest = Request[IO](
+      Method.POST,
+      uri"/api/users",
+      headers = Headers(`Content-Type`(MediaType.application.json)),
+      body = Stream.emits(registerPayload.getBytes(StandardCharsets.UTF_8)).covary[IO]
+    )
+
+    val createPayload =
+      """{"article":{"title":"Training dragons","description":"A guide","body":"Believe in yourself","tagList":["dragons"]}}"""
+
+    val updatePayload =
+      """{"article":{"title":"Did you train your dragon?"}}"""
+
+    val result =
+      for
+        registerResponse <- httpApp.run(registerRequest)
+        _ = assertEquals(registerResponse.status, Status.Ok)
+        (userResponse, _) <- assertUserPayload(registerResponse, "author@example.com", "Author")
+        token = userResponse.user.token
+        createRequest = Request[IO](
+          Method.POST,
+          uri"/api/articles",
+          headers = Headers(
+            Authorization(Credentials.Token(AuthScheme.Bearer, token)),
+            `Content-Type`(MediaType.application.json)
+          ),
+          body = Stream.emits(createPayload.getBytes(StandardCharsets.UTF_8)).covary[IO]
+        )
+        createResponse <- httpApp.run(createRequest)
+        _ = assertEquals(createResponse.status, Status.Created)
+        createdArticle <-
+          assertArticlePayload(
+            createResponse,
+            expectedSlug = "training-dragons",
+            expectedTitle = "Training dragons",
+            expectedDescription = "A guide",
+            expectedBody = "Believe in yourself",
+            expectedTags = List("dragons"),
+            expectedAuthorUsername = "Author"
+          )
+        updateRequest = Request[IO](
+          Method.PUT,
+          uri"/api/articles" / createdArticle.article.slug,
+          headers = Headers(
+            Authorization(Credentials.Token(AuthScheme.Bearer, token)),
+            `Content-Type`(MediaType.application.json)
+          ),
+          body = Stream.emits(updatePayload.getBytes(StandardCharsets.UTF_8)).covary[IO]
+        )
+        updateResponse <- httpApp.run(updateRequest)
+        _ = assertEquals(updateResponse.status, Status.Ok)
+        updatedArticle <-
+          assertArticlePayload(
+            updateResponse,
+            expectedSlug = "did-you-train-your-dragon",
+            expectedTitle = "Did you train your dragon?",
+            expectedDescription = "A guide",
+            expectedBody = "Believe in yourself",
+            expectedTags = List("dragons"),
+            expectedAuthorUsername = "Author"
+          )
+        _ = assert(!updatedArticle.article.updatedAt.isBefore(createdArticle.article.updatedAt))
+        getRequest = Request[IO](Method.GET, uri"/api/articles" / updatedArticle.article.slug)
+        getResponse <- httpApp.run(getRequest)
+        _ = assertEquals(getResponse.status, Status.Ok)
+        _ <-
+          assertArticlePayload(
+            getResponse,
+            expectedSlug = "did-you-train-your-dragon",
+            expectedTitle = "Did you train your dragon?",
+            expectedDescription = "A guide",
+            expectedBody = "Believe in yourself",
+            expectedTags = List("dragons"),
+            expectedAuthorUsername = "Author"
+          )
+      yield ()
+
+    result
+
+  test("delete article endpoint removes article for the author"):
+    val httpApp = httpAppFixture()
+    val registerPayload =
+      """{"user":{"username":"Remover","email":"remover@example.com","password":"secretpass"}}"""
+    val registerRequest = Request[IO](
+      Method.POST,
+      uri"/api/users",
+      headers = Headers(`Content-Type`(MediaType.application.json)),
+      body = Stream.emits(registerPayload.getBytes(StandardCharsets.UTF_8)).covary[IO]
+    )
+
+    val createPayload =
+      """{"article":{"title":"Disposable article","description":"Temporary","body":"To be deleted","tagList":["temp"]}}"""
+
+    val result =
+      for
+        registerResponse <- httpApp.run(registerRequest)
+        _ = assertEquals(registerResponse.status, Status.Ok)
+        (userResponse, _) <- assertUserPayload(registerResponse, "remover@example.com", "Remover")
+        token = userResponse.user.token
+        createRequest = Request[IO](
+          Method.POST,
+          uri"/api/articles",
+          headers = Headers(
+            Authorization(Credentials.Token(AuthScheme.Bearer, token)),
+            `Content-Type`(MediaType.application.json)
+          ),
+          body = Stream.emits(createPayload.getBytes(StandardCharsets.UTF_8)).covary[IO]
+        )
+        createResponse <- httpApp.run(createRequest)
+        _ = assertEquals(createResponse.status, Status.Created)
+        createdArticle <-
+          assertArticlePayload(
+            createResponse,
+            expectedSlug = "disposable-article",
+            expectedTitle = "Disposable article",
+            expectedDescription = "Temporary",
+            expectedBody = "To be deleted",
+            expectedTags = List("temp"),
+            expectedAuthorUsername = "Remover"
+          )
+        deleteRequest = Request[IO](
+          Method.DELETE,
+          uri"/api/articles" / createdArticle.article.slug,
+          headers = Headers(Authorization(Credentials.Token(AuthScheme.Bearer, token)))
+        )
+        deleteResponse <- httpApp.run(deleteRequest)
+        _ = assertEquals(deleteResponse.status, Status.NoContent)
+        getRequest = Request[IO](Method.GET, uri"/api/articles" / createdArticle.article.slug)
+        getResponse <- httpApp.run(getRequest)
+        _ = assertEquals(getResponse.status, Status.NotFound)
+      yield ()
+
+    result
+
   test("profile endpoint returns user profile without authentication"):
     val httpApp = httpAppFixture()
     val registerPayload =

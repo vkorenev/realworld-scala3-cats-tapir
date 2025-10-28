@@ -7,15 +7,13 @@ import com.example.realworld.model.ArticleSummary
 import com.example.realworld.model.MultipleArticlesResponse
 import com.example.realworld.model.NewArticle
 import com.example.realworld.model.Profile
+import com.example.realworld.model.UpdateArticle
 import com.example.realworld.model.UserId
 import com.example.realworld.repository.ArticleFilters
 import com.example.realworld.repository.ArticlePage
 import com.example.realworld.repository.ArticleRepository
 import com.example.realworld.repository.Pagination
 import com.example.realworld.repository.StoredArticle
-
-import java.text.Normalizer
-import java.util.Locale
 
 trait ArticleService[F[_]]:
   def create(authorId: UserId, article: NewArticle): F[Article]
@@ -26,18 +24,11 @@ trait ArticleService[F[_]]:
   ): F[MultipleArticlesResponse]
   def feed(userId: UserId, pagination: Pagination): F[MultipleArticlesResponse]
   def find(viewerId: Option[UserId], slug: String): F[Option[Article]]
+  def update(authorId: UserId, slug: String, update: UpdateArticle): F[Article]
+  def delete(authorId: UserId, slug: String): F[Unit]
 
 final class LiveArticleService[F[_]: Async](articleRepository: ArticleRepository[F])
     extends ArticleService[F]:
-  private val DefaultSlug = "article"
-
-  private def slugify(title: String): String =
-    val normalized = Normalizer.normalize(title, Normalizer.Form.NFD)
-    val ascii = normalized.replaceAll("\\p{M}", "")
-    val lowerCased = ascii.toLowerCase(Locale.ENGLISH)
-    val replaced = lowerCased.replaceAll("[^a-z0-9]+", "-")
-    val trimmed = replaced.replaceAll("^-+|-+$", "")
-    if trimmed.nonEmpty then trimmed else DefaultSlug
 
   private def toArticle(
       stored: StoredArticle,
@@ -64,11 +55,10 @@ final class LiveArticleService[F[_]: Async](articleRepository: ArticleRepository
     )
 
   override def create(authorId: UserId, article: NewArticle): F[Article] =
-    val baseSlug = slugify(article.title)
     for
       at <- Async[F].realTimeInstant
       article <- articleRepository
-        .create(authorId, baseSlug, article, at)
+        .create(authorId, article, at)
         .map(toArticle(_, favorited = false, favoritesCount = 0, following = false))
     yield article
 
@@ -152,6 +142,20 @@ final class LiveArticleService[F[_]: Async](articleRepository: ArticleRepository
           )
         )
       )
+
+  override def update(authorId: UserId, slug: String, update: UpdateArticle): F[Article] =
+    for
+      now <- Async[F].realTimeInstant
+      updatedStored <- articleRepository.update(
+        authorId = authorId,
+        slug = slug,
+        update = update,
+        updatedAt = now
+      )
+    yield toArticle(updatedStored, favorited = false, favoritesCount = 0, following = false)
+
+  override def delete(authorId: UserId, slug: String): F[Unit] =
+    articleRepository.delete(authorId, slug)
 
 object ArticleService:
   def live[F[_]: Async](articleRepository: ArticleRepository[F]): ArticleService[F] =

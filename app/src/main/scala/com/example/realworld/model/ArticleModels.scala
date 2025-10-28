@@ -49,3 +49,14 @@ final case class MultipleArticlesResponse(
     articlesCount: Int
 ) derives ConfiguredJsonValueCodec,
       Schema
+
+final case class UpdateArticle(
+    title: Option[String],
+    description: Option[String],
+    body: Option[String]
+) derives ConfiguredJsonValueCodec,
+      Schema
+
+final case class UpdateArticleRequest(article: UpdateArticle)
+    derives ConfiguredJsonValueCodec,
+      Schema

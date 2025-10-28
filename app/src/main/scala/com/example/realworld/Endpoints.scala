@@ -10,6 +10,7 @@ import com.example.realworld.model.MultipleArticlesResponse
 import com.example.realworld.model.NewArticleRequest
 import com.example.realworld.model.NewUserRequest
 import com.example.realworld.model.ProfileResponse
+import com.example.realworld.model.UpdateArticleRequest
 import com.example.realworld.model.UpdateUserRequest
 import com.example.realworld.model.UserId
 import com.example.realworld.model.UserResponse
@@ -50,6 +51,10 @@ case class Endpoints[F[_]: Async](
   ): EndpointInput.Auth[T, EndpointInput.AuthType.Http] =
     TapirAuth.http(TokenAuthScheme, challenge)
 
+  private val secureEndpointErrorOutput = oneOf[Exception](
+    oneOfVariant(statusCode(StatusCode.Unauthorized).and(jsonBody[Unauthorized]))
+  )
+
   private val secureEndpoint = endpoint
     .securityIn(
       auth
@@ -63,7 +68,7 @@ case class Endpoints[F[_]: Async](
           (Some(token), None)
         }
     )
-    .errorOut(statusCode(StatusCode.Unauthorized).and(jsonBody[Unauthorized]))
+    .errorOut(secureEndpointErrorOutput)
     .serverSecurityLogicRecoverErrors[UserId, F](authToken.resolve)
 
   private val optionallySecureEndpoint = endpoint
@@ -81,7 +86,7 @@ case class Endpoints[F[_]: Async](
           case None => (None, None)
         }
     )
-    .errorOut(statusCode(StatusCode.Unauthorized).and(jsonBody[Unauthorized]))
+    .errorOut(secureEndpointErrorOutput)
     .serverSecurityLogicRecoverErrors[Option[UserId], F](_.traverse(authToken.resolve))
 
   private def livenessEndpoint = endpoint.get
@@ -140,6 +145,7 @@ case class Endpoints[F[_]: Async](
     .out(jsonBody[ProfileResponse])
     .description("Get a profile of a user of the system. Auth is optional")
     .tag("Profile")
+    .errorOutVariantPrepend(oneOfVariant(statusCode(StatusCode.NotFound).and(jsonBody[NotFound])))
     .serverLogicRecoverErrors { userId => username =>
       userService
         .findProfile(userId, username)
@@ -151,6 +157,7 @@ case class Endpoints[F[_]: Async](
     .out(jsonBody[ProfileResponse])
     .description("Follow a user by username")
     .tag("Profile")
+    .errorOutVariantPrepend(oneOfVariant(statusCode(StatusCode.NotFound).and(jsonBody[NotFound])))
     .serverLogicRecoverErrors { followerId => username =>
       userService.follow(followerId, username).map(ProfileResponse.apply)
     }
@@ -160,6 +167,7 @@ case class Endpoints[F[_]: Async](
     .out(jsonBody[ProfileResponse])
     .description("Unfollow a user by username")
     .tag("Profile")
+    .errorOutVariantPrepend(oneOfVariant(statusCode(StatusCode.NotFound).and(jsonBody[NotFound])))
     .serverLogicRecoverErrors { followerId => username =>
       userService.unfollow(followerId, username).map(ProfileResponse.apply)
     }
@@ -203,8 +211,9 @@ case class Endpoints[F[_]: Async](
   private def getArticleEndpoint = optionallySecureEndpoint.get
     .in("api" / "articles" / path[String]("slug"))
     .out(jsonBody[ArticleResponse])
-    .description("Get a single article by slug")
+    .description("Get an article")
     .tag("Articles")
+    .errorOutVariantPrepend(oneOfVariant(statusCode(StatusCode.NotFound).and(jsonBody[NotFound])))
     .serverLogicRecoverErrors { userId => slug =>
       articleService
         .find(userId, slug)
@@ -224,6 +233,30 @@ case class Endpoints[F[_]: Async](
         .map(ArticleResponse.apply)
     }
 
+  private def updateArticleEndpoint = secureEndpoint.put
+    .in("api" / "articles" / path[String]("slug"))
+    .in(jsonBody[UpdateArticleRequest])
+    .out(jsonBody[ArticleResponse])
+    .description("Update an article")
+    .tag("Articles")
+    .errorOutVariantPrepend(oneOfVariant(statusCode(StatusCode.NotFound).and(jsonBody[NotFound])))
+    .serverLogicRecoverErrors { authorId => params =>
+      val (slug, request) = params
+      articleService
+        .update(authorId, slug, request.article)
+        .map(ArticleResponse.apply)
+    }
+
+  private def deleteArticleEndpoint = secureEndpoint.delete
+    .in("api" / "articles" / path[String]("slug"))
+    .out(statusCode(StatusCode.NoContent))
+    .description("Delete an article")
+    .tag("Articles")
+    .errorOutVariantPrepend(oneOfVariant(statusCode(StatusCode.NotFound).and(jsonBody[NotFound])))
+    .serverLogicRecoverErrors { authorId => slug =>
+      articleService.delete(authorId, slug)
+    }
+
   def routes: HttpRoutes[F] =
     val serverEndpoints = List(
       livenessEndpoint,
@@ -237,7 +270,9 @@ case class Endpoints[F[_]: Async](
       feedArticlesEndpoint,
       listArticlesEndpoint,
       getArticleEndpoint,
-      createArticleEndpoint
+      createArticleEndpoint,
+      updateArticleEndpoint,
+      deleteArticleEndpoint
     )
 
     val swaggerEndpoints =

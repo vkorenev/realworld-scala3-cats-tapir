@@ -120,6 +120,30 @@ object Queries:
       VALUES ($slug, ${article.title}, ${article.description}, ${article.body}, $at, $at, $authorId)
     """.update
 
+  def updateArticle(
+      id: ArticleId,
+      slug: String,
+      title: String,
+      description: String,
+      body: String,
+      updatedAt: Instant
+  ): Update0 =
+    sql"""
+      UPDATE articles
+      SET slug = $slug,
+          title = $title,
+          description = $description,
+          body = $body,
+          updated_at = $updatedAt
+      WHERE id = $id
+    """.update
+
+  def deleteArticle(id: ArticleId): Update0 =
+    sql"""
+      DELETE FROM articles
+      WHERE id = $id
+    """.update
+
   val insertArticleTag: Update[(ArticleId, String)] =
     Update[(ArticleId, String)](
       "INSERT INTO article_tags (article_id, tag) VALUES (?, ?)"
