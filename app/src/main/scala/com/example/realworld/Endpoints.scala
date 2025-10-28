@@ -200,6 +200,17 @@ case class Endpoints[F[_]: Async](
       articleService.list(userId, filters, pagination)
     }
 
+  private def getArticleEndpoint = optionallySecureEndpoint.get
+    .in("api" / "articles" / path[String]("slug"))
+    .out(jsonBody[ArticleResponse])
+    .description("Get a single article by slug")
+    .tag("Articles")
+    .serverLogicRecoverErrors { userId => slug =>
+      articleService
+        .find(userId, slug)
+        .flatMap(ApplicativeThrow[F].fromOption(_, NotFound()).map(ArticleResponse.apply))
+    }
+
   private def createArticleEndpoint = secureEndpoint.post
     .in("api" / "articles")
     .in(jsonBody[NewArticleRequest])
@@ -225,6 +236,7 @@ case class Endpoints[F[_]: Async](
       unfollowProfileEndpoint,
       feedArticlesEndpoint,
       listArticlesEndpoint,
+      getArticleEndpoint,
       createArticleEndpoint
     )
 

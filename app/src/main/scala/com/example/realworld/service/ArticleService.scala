@@ -25,6 +25,7 @@ trait ArticleService[F[_]]:
       pagination: Pagination
   ): F[MultipleArticlesResponse]
   def feed(userId: UserId, pagination: Pagination): F[MultipleArticlesResponse]
+  def find(viewerId: Option[UserId], slug: String): F[Option[Article]]
 
 final class LiveArticleService[F[_]: Async](articleRepository: ArticleRepository[F])
     extends ArticleService[F]:
@@ -135,6 +136,20 @@ final class LiveArticleService[F[_]: Async](articleRepository: ArticleRepository
           _ => false,
           _ => 0,
           _ => true
+        )
+      )
+
+  override def find(viewerId: Option[UserId], slug: String): F[Option[Article]] =
+    articleRepository
+      .findBySlug(slug)
+      .map(
+        _.map(stored =>
+          toArticle(
+            stored = stored,
+            favorited = false,
+            favoritesCount = 0,
+            following = false
+          )
         )
       )
 

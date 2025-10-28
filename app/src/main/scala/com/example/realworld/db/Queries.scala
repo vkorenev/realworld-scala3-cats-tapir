@@ -4,9 +4,9 @@ import com.example.realworld.model.ArticleId
 import com.example.realworld.model.NewArticle
 import com.example.realworld.model.UserId
 import com.example.realworld.repository.ArticleFilters
+import com.example.realworld.repository.StoredArticle
 import com.example.realworld.repository.StoredUser
 import doobie.Query0
-import doobie.Read
 import doobie.Update
 import doobie.Update0
 import doobie.implicits.*
@@ -38,17 +38,6 @@ object Queries:
           )
         """)
     )
-
-  final case class ArticleRow(
-      id: ArticleId,
-      slug: String,
-      title: String,
-      description: String,
-      body: String,
-      createdAt: Instant,
-      updatedAt: Instant,
-      authorId: UserId
-  ) derives Read
 
   def insertUser(username: String, email: String, passwordHash: String): Update0 =
     sql"""
@@ -147,32 +136,34 @@ object Queries:
       filters: ArticleFilters,
       limit: Long,
       offset: Long
-  ): Query0[(ArticleRow, StoredUser, List[String])] =
+  ): Query0[StoredArticle] =
     sql"""
       SELECT a.id,
              a.slug,
              a.title,
              a.description,
              a.body,
+             COALESCE(
+               (
+                 SELECT ARRAY_AGG(DISTINCT tag)
+                 FROM article_tags tags
+                 WHERE tags.article_id = a.id
+               ),
+               ARRAY[]::text[]
+             ) AS tags,
              a.created_at,
              a.updated_at,
-             a.author_id,
              u.id,
              u.email,
              u.username,
              u.bio,
-             u.image,
-             (
-               SELECT ARRAY_AGG(DISTINCT tag)
-               FROM article_tags tags
-               WHERE tags.article_id = a.id
-             ) AS tags
+             u.image
       FROM articles a
       JOIN users u ON a.author_id = u.id
       ${filtersFragment(filters)}
       ORDER BY a.created_at DESC, a.id DESC
       LIMIT $limit OFFSET $offset
-    """.query[(ArticleRow, StoredUser, List[String])]
+    """.query[StoredArticle]
 
   def selectArticlesCount(filters: ArticleFilters): Query0[Long] =
     sql"""
@@ -189,33 +180,35 @@ object Queries:
       userId: UserId,
       limit: Long,
       offset: Long
-  ): Query0[(ArticleRow, StoredUser, List[String])] =
+  ): Query0[StoredArticle] =
     sql"""
       SELECT a.id,
              a.slug,
              a.title,
              a.description,
              a.body,
+             COALESCE(
+               (
+                 SELECT ARRAY_AGG(DISTINCT tag)
+                 FROM article_tags tags
+                 WHERE tags.article_id = a.id
+               ),
+               ARRAY[]::text[]
+             ) AS tags,
              a.created_at,
              a.updated_at,
-             a.author_id,
              u.id,
              u.email,
              u.username,
              u.bio,
-             u.image,
-             (
-               SELECT ARRAY_AGG(DISTINCT tag)
-               FROM article_tags tags
-               WHERE tags.article_id = a.id
-             ) AS tags
+             u.image
       FROM articles a
       JOIN user_follows f ON f.followed_id = a.author_id
       JOIN users u ON a.author_id = u.id
       WHERE f.follower_id = $userId
       ORDER BY a.created_at DESC, a.id DESC
       LIMIT $limit OFFSET $offset
-    """.query[(ArticleRow, StoredUser, List[String])]
+    """.query[StoredArticle]
 
   def selectFeedCount(userId: UserId): Query0[Long] =
     sql"""
@@ -227,3 +220,30 @@ object Queries:
         WHERE f.follower_id = $userId
       ) counted
     """.query[Long]
+
+  def selectArticleBySlug(slug: String): Query0[StoredArticle] =
+    sql"""
+      SELECT a.id,
+             a.slug,
+             a.title,
+             a.description,
+             a.body,
+             COALESCE(
+               (
+                 SELECT ARRAY_AGG(DISTINCT tag)
+                 FROM article_tags tags
+                 WHERE tags.article_id = a.id
+               ),
+               ARRAY[]::text[]
+             ) AS tags,
+             a.created_at,
+             a.updated_at,
+             u.id,
+             u.email,
+             u.username,
+             u.bio,
+             u.image
+      FROM articles a
+      JOIN users u ON a.author_id = u.id
+      WHERE a.slug = $slug
+    """.query[StoredArticle]

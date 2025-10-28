@@ -4,13 +4,14 @@ import cats.ApplicativeThrow
 import cats.effect.Async
 import cats.syntax.all.*
 import com.example.realworld.db.Queries
-import com.example.realworld.db.Queries.ArticleRow
 import com.example.realworld.model.ArticleId
 import com.example.realworld.model.NewArticle
 import com.example.realworld.model.UserId
 import doobie.ConnectionIO
+import doobie.Read
 import doobie.Transactor
 import doobie.implicits.*
+import doobie.postgres.implicits.*
 
 import java.time.Instant
 
@@ -18,6 +19,7 @@ trait ArticleRepository[F[_]]:
   def create(authorId: UserId, baseSlug: String, article: NewArticle, at: Instant): F[StoredArticle]
   def list(filters: ArticleFilters, pagination: Pagination): F[ArticlePage]
   def feed(userId: UserId, pagination: Pagination): F[ArticlePage]
+  def findBySlug(slug: String): F[Option[StoredArticle]]
 
 final case class StoredArticle(
     id: ArticleId,
@@ -29,7 +31,7 @@ final case class StoredArticle(
     createdAt: Instant,
     updatedAt: Instant,
     author: StoredUser
-)
+) derives Read
 
 final case class ArticleFilters(
     tag: Option[String],
@@ -47,19 +49,10 @@ final class DoobieArticleRepository[F[_]: Async](xa: Transactor[F]) extends Arti
       slug: String,
       article: NewArticle,
       at: Instant
-  ): ConnectionIO[ArticleRow] =
+  ): ConnectionIO[ArticleId] =
     Queries
       .insertArticle(slug, article, authorId, at)
-      .withUniqueGeneratedKeys[ArticleRow](
-        "id",
-        "slug",
-        "title",
-        "description",
-        "body",
-        "created_at",
-        "updated_at",
-        "author_id"
-      )
+      .withUniqueGeneratedKeys[ArticleId]("id")
 
   private def insertTags(articleId: ArticleId, tags: List[String]): ConnectionIO[Unit] =
     if tags.isEmpty then ().pure[ConnectionIO]
@@ -67,9 +60,6 @@ final class DoobieArticleRepository[F[_]: Async](xa: Transactor[F]) extends Arti
       Queries.insertArticleTag
         .updateMany(tags.map(tag => (articleId, tag)))
         .void
-
-  private def selectAuthor(userId: UserId): ConnectionIO[StoredUser] =
-    Queries.selectById(userId).unique
 
   private def loadSlugsWithPrefix(baseSlug: String): ConnectionIO[List[String]] =
     val prefixPattern = s"$baseSlug%"
@@ -103,19 +93,19 @@ final class DoobieArticleRepository[F[_]: Async](xa: Transactor[F]) extends Arti
         .distinct
 
     (for
+      author <- Queries.selectById(authorId).unique
       slug <- ensureUniqueSlug(baseSlug)
-      row <- insertArticle(authorId, slug, article, at)
-      _ <- insertTags(row.id, sanitizedTags)
-      author <- selectAuthor(row.authorId)
+      articleId <- insertArticle(authorId, slug, article, at)
+      _ <- insertTags(articleId, sanitizedTags)
     yield StoredArticle(
-      id = row.id,
-      slug = row.slug,
-      title = row.title,
-      description = row.description,
-      body = row.body,
+      id = articleId,
+      slug = slug,
+      title = article.title,
+      description = article.description,
+      body = article.body,
       tagList = sanitizedTags,
-      createdAt = row.createdAt,
-      updatedAt = row.updatedAt,
+      createdAt = at,
+      updatedAt = at,
       author = author
     )).transact(xa)
 
@@ -123,7 +113,7 @@ final class DoobieArticleRepository[F[_]: Async](xa: Transactor[F]) extends Arti
       filters: ArticleFilters,
       limit: Int,
       offset: Int
-  ): ConnectionIO[List[(ArticleRow, StoredUser, List[String])]] =
+  ): ConnectionIO[List[StoredArticle]] =
     Queries
       .selectArticles(filters, limit, offset)
       .to[List]
@@ -134,32 +124,15 @@ final class DoobieArticleRepository[F[_]: Async](xa: Transactor[F]) extends Arti
       .unique
       .map(_.toInt)
 
-  private def toStoredArticles(
-      rows: List[(ArticleRow, StoredUser, List[String])]
-  ): List[StoredArticle] =
-    rows.map { case (row, author, tags) =>
-      StoredArticle(
-        id = row.id,
-        slug = row.slug,
-        title = row.title,
-        description = row.description,
-        body = row.body,
-        tagList = tags,
-        createdAt = row.createdAt,
-        updatedAt = row.updatedAt,
-        author = author
-      )
-    }
-
   override def list(filters: ArticleFilters, pagination: Pagination): F[ArticlePage] =
     val normalizedLimit = pagination.limit.max(0)
     val normalizedOffset = pagination.offset.max(0)
 
     (for
-      rows <- selectArticlesQuery(filters, normalizedLimit, normalizedOffset)
+      articles <- selectArticlesQuery(filters, normalizedLimit, normalizedOffset)
       total <- selectArticlesCount(filters)
     yield ArticlePage(
-      articles = toStoredArticles(rows),
+      articles = articles,
       articlesCount = total
     )).transact(xa)
 
@@ -167,7 +140,7 @@ final class DoobieArticleRepository[F[_]: Async](xa: Transactor[F]) extends Arti
       userId: UserId,
       limit: Int,
       offset: Int
-  ): ConnectionIO[List[(ArticleRow, StoredUser, List[String])]] =
+  ): ConnectionIO[List[StoredArticle]] =
     Queries
       .selectFeedArticles(userId, limit, offset)
       .to[List]
@@ -186,6 +159,17 @@ final class DoobieArticleRepository[F[_]: Async](xa: Transactor[F]) extends Arti
       rows <- selectFeedArticles(userId, normalizedLimit, normalizedOffset)
       total <- selectFeedCount(userId)
     yield ArticlePage(
-      articles = toStoredArticles(rows),
+      articles = rows,
       articlesCount = total
     )).transact(xa)
+
+  private def selectArticleBySlug(
+      slug: String
+  ): ConnectionIO[Option[StoredArticle]] =
+    Queries
+      .selectArticleBySlug(slug)
+      .option
+
+  override def findBySlug(slug: String): F[Option[StoredArticle]] =
+    selectArticleBySlug(slug)
+      .transact(xa)

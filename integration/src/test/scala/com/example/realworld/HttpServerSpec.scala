@@ -187,6 +187,68 @@ class HttpServerSpec extends CatsEffectSuite:
 
     result
 
+  test("get article endpoint returns article by slug without authentication"):
+    val httpApp = httpAppFixture()
+    val registerPayload =
+      """{"user":{"username":"Jessie","email":"jessie@example.com","password":"secretpass"}}"""
+    val registerRequest = Request[IO](
+      Method.POST,
+      uri"/api/users",
+      headers = Headers(`Content-Type`(MediaType.application.json)),
+      body = Stream.emits(registerPayload.getBytes(StandardCharsets.UTF_8)).covary[IO]
+    )
+
+    val articlePayload =
+      """{"article":{"title":"Exploring Rust","description":"Borrow checker fun","body":"Rust is great","tagList":["rust","systems"]}}"""
+
+    val result =
+      for
+        registerResponse <- httpApp.run(registerRequest)
+        _ = assertEquals(registerResponse.status, Status.Ok)
+        (registeredUserResponse, _) <-
+          assertUserPayload(registerResponse, "jessie@example.com", "Jessie")
+        token = registeredUserResponse.user.token
+        createRequest = Request[IO](
+          Method.POST,
+          uri"/api/articles",
+          headers = Headers(
+            Authorization(Credentials.Token(AuthScheme.Bearer, token)),
+            `Content-Type`(MediaType.application.json)
+          ),
+          body = Stream.emits(articlePayload.getBytes(StandardCharsets.UTF_8)).covary[IO]
+        )
+        createResponse <- httpApp.run(createRequest)
+        _ = assertEquals(createResponse.status, Status.Created)
+        createdArticle <-
+          assertArticlePayload(
+            createResponse,
+            expectedSlug = "exploring-rust",
+            expectedTitle = "Exploring Rust",
+            expectedDescription = "Borrow checker fun",
+            expectedBody = "Rust is great",
+            expectedTags = List("rust", "systems"),
+            expectedAuthorUsername = "Jessie"
+          )
+        getRequest = Request[IO](
+          Method.GET,
+          uri"/api/articles" / createdArticle.article.slug
+        )
+        getResponse <- httpApp.run(getRequest)
+        _ = assertEquals(getResponse.status, Status.Ok)
+        _ <-
+          assertArticlePayload(
+            getResponse,
+            expectedSlug = "exploring-rust",
+            expectedTitle = "Exploring Rust",
+            expectedDescription = "Borrow checker fun",
+            expectedBody = "Rust is great",
+            expectedTags = List("rust", "systems"),
+            expectedAuthorUsername = "Jessie"
+          )
+      yield ()
+
+    result
+
   test("profile endpoint returns user profile without authentication"):
     val httpApp = httpAppFixture()
     val registerPayload =
