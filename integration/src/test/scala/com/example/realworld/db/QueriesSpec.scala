@@ -88,8 +88,8 @@ class QueriesSpec extends CatsEffectSuite with IOChecker:
   test("deleteArticle"):
     check(deleteArticle(ArticleId(0)))
 
-  test("selectArticleSlugsWithPrefix"):
-    check(selectArticleSlugsWithPrefix(""))
+  test("selectArticleSlugsLike"):
+    check(selectArticleSlugsLike(""))
 
   test("selectArticles with empty filters"):
     check(selectArticles(emptyFilters, limit = 0, offset = 0))

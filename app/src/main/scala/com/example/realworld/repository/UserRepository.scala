@@ -38,18 +38,6 @@ final case class DoobieUserRepository[F[_]: Async](
     xa: Transactor[F],
     passwordHasher: PasswordHasher[F]
 ) extends UserRepository[F]:
-  private def selectUserByUsername(username: String): ConnectionIO[Option[StoredUser]] =
-    Queries.selectUserByUsername(username).option
-
-  private def selectFollowing(followerId: UserId, followedId: UserId): ConnectionIO[Boolean] =
-    Queries.selectFollowing(followerId, followedId).unique
-
-  private def insertFollow(followerId: UserId, followedId: UserId): ConnectionIO[Unit] =
-    Queries.insertFollow(followerId, followedId).run.void
-
-  private def deleteFollow(followerId: UserId, followedId: UserId): ConnectionIO[Unit] =
-    Queries.deleteFollow(followerId, followedId).run.void
-
   override def create(input: NewUser): F[StoredUser] =
     for
       hashedPassword <- passwordHasher.hash(input.password)
@@ -92,12 +80,8 @@ final case class DoobieUserRepository[F[_]: Async](
           case Some((existing, currentPasswordHash)) =>
             val updatedEmail = update.email.getOrElse(existing.email)
             val updatedUsername = update.username.getOrElse(existing.username)
-            val updatedBio = update.bio match
-              case some @ Some(_) => some
-              case None => existing.bio
-            val updatedImage = update.image match
-              case some @ Some(_) => some
-              case None => existing.image
+            val updatedBio = update.bio.orElse(existing.bio)
+            val updatedImage = update.image.orElse(existing.image)
             val updatedPasswordHash = hashedPasswordOpt.getOrElse(currentPasswordHash)
 
             Queries
@@ -128,14 +112,15 @@ final case class DoobieUserRepository[F[_]: Async](
 
   override def findProfile(viewer: Option[UserId], username: String): F[Option[StoredProfile]] =
     (for
-      maybeUser <- selectUserByUsername(username)
+      maybeUser <- Queries.selectUserByUsername(username).option
       profile <- maybeUser match
         case Some(user) =>
           viewer match
             case Some(viewerId) if viewerId != user.id =>
-              selectFollowing(viewerId, user.id).map(isFollowing =>
-                Some(StoredProfile(user, following = isFollowing))
-              )
+              Queries
+                .selectFollowing(viewerId, user.id)
+                .unique
+                .map(isFollowing => Some(StoredProfile(user, following = isFollowing)))
             case _ =>
               Option(StoredProfile(user, following = false)).pure[ConnectionIO]
         case None =>
@@ -144,12 +129,12 @@ final case class DoobieUserRepository[F[_]: Async](
 
   override def follow(followerId: UserId, username: String): F[Option[StoredProfile]] =
     (for
-      maybeUser <- selectUserByUsername(username)
+      maybeUser <- Queries.selectUserByUsername(username).option
       profile <- maybeUser match
         case Some(user) =>
           val action =
             if followerId == user.id then ().pure[ConnectionIO]
-            else insertFollow(followerId, user.id)
+            else Queries.insertFollow(followerId, user.id).run.void
           action.as(Some(StoredProfile(user, following = followerId != user.id)))
         case None =>
           Option.empty[StoredProfile].pure[ConnectionIO]
@@ -157,12 +142,12 @@ final case class DoobieUserRepository[F[_]: Async](
 
   override def unfollow(followerId: UserId, username: String): F[Option[StoredProfile]] =
     (for
-      maybeUser <- selectUserByUsername(username)
+      maybeUser <- Queries.selectUserByUsername(username).option
       profile <- maybeUser match
         case Some(user) =>
           val action =
             if followerId == user.id then ().pure[ConnectionIO]
-            else deleteFollow(followerId, user.id)
+            else Queries.deleteFollow(followerId, user.id).run.void
           action.as(Some(StoredProfile(user, following = false)))
         case None =>
           Option.empty[StoredProfile].pure[ConnectionIO]

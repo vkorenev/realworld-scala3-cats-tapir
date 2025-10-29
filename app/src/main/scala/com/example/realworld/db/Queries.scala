@@ -149,7 +149,7 @@ object Queries:
       "INSERT INTO article_tags (article_id, tag) VALUES (?, ?)"
     )
 
-  def selectArticleSlugsWithPrefix(pattern: String): Query0[String] =
+  def selectArticleSlugsLike(pattern: String): Query0[String] =
     sql"""
       SELECT slug
       FROM articles
