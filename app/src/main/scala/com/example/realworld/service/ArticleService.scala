@@ -25,17 +25,14 @@ trait ArticleService[F[_]]:
   def feed(userId: UserId, pagination: Pagination): F[MultipleArticlesResponse]
   def find(viewerId: Option[UserId], slug: String): F[Option[Article]]
   def update(authorId: UserId, slug: String, update: UpdateArticle): F[Article]
+  def favorite(userId: UserId, slug: String): F[Article]
+  def unfavorite(userId: UserId, slug: String): F[Article]
   def delete(authorId: UserId, slug: String): F[Unit]
 
 final class LiveArticleService[F[_]: Async](articleRepository: ArticleRepository[F])
     extends ArticleService[F]:
 
-  private def toArticle(
-      stored: StoredArticle,
-      favorited: Boolean,
-      favoritesCount: Int,
-      following: Boolean
-  ): Article =
+  private def toArticle(stored: StoredArticle): Article =
     Article(
       slug = stored.slug,
       title = stored.title,
@@ -44,29 +41,24 @@ final class LiveArticleService[F[_]: Async](articleRepository: ArticleRepository
       tagList = stored.tagList,
       createdAt = stored.createdAt,
       updatedAt = stored.updatedAt,
-      favorited = favorited,
-      favoritesCount = favoritesCount,
+      favorited = stored.favorited,
+      favoritesCount = stored.favoritesCount,
       author = Profile(
-        username = stored.author.username,
-        bio = stored.author.bio,
-        image = stored.author.image,
-        following = following
+        username = stored.author.user.username,
+        bio = stored.author.user.bio,
+        image = stored.author.user.image,
+        following = stored.author.following
       )
     )
 
   override def create(authorId: UserId, article: NewArticle): F[Article] =
     for
       at <- Async[F].realTimeInstant
-      article <- articleRepository
-        .create(authorId, article, at)
-        .map(toArticle(_, favorited = false, favoritesCount = 0, following = false))
-    yield article
+      stored <- articleRepository.create(authorId, article, at)
+    yield toArticle(stored)
 
   private def toArticleSummary(
-      stored: StoredArticle,
-      favorited: Boolean,
-      favoritesCount: Int,
-      following: Boolean
+      stored: StoredArticle
   ): ArticleSummary =
     ArticleSummary(
       slug = stored.slug,
@@ -75,30 +67,18 @@ final class LiveArticleService[F[_]: Async](articleRepository: ArticleRepository
       tagList = stored.tagList,
       createdAt = stored.createdAt,
       updatedAt = stored.updatedAt,
-      favorited = favorited,
-      favoritesCount = favoritesCount,
+      favorited = stored.favorited,
+      favoritesCount = stored.favoritesCount,
       author = Profile(
-        username = stored.author.username,
-        bio = stored.author.bio,
-        image = stored.author.image,
-        following = following
+        username = stored.author.user.username,
+        bio = stored.author.user.bio,
+        image = stored.author.user.image,
+        following = stored.author.following
       )
     )
 
-  private def toArticlesResponse(
-      page: ArticlePage,
-      favorited: StoredArticle => Boolean,
-      favoritesCount: StoredArticle => Int,
-      following: StoredArticle => Boolean
-  ): MultipleArticlesResponse =
-    val articles = page.articles.map { stored =>
-      toArticleSummary(
-        stored = stored,
-        favorited = favorited(stored),
-        favoritesCount = favoritesCount(stored),
-        following = following(stored)
-      )
-    }
+  private def toArticlesResponse(page: ArticlePage): MultipleArticlesResponse =
+    val articles = page.articles.map(toArticleSummary)
     MultipleArticlesResponse(articles = articles, articlesCount = page.articlesCount)
 
   override def list(
@@ -107,41 +87,18 @@ final class LiveArticleService[F[_]: Async](articleRepository: ArticleRepository
       pagination: Pagination
   ): F[MultipleArticlesResponse] =
     articleRepository
-      .list(filters, pagination)
-      .map(page =>
-        toArticlesResponse(
-          page,
-          _ => false,
-          _ => 0,
-          _ => false
-        )
-      )
+      .list(viewerId, filters, pagination)
+      .map(toArticlesResponse)
 
   override def feed(userId: UserId, pagination: Pagination): F[MultipleArticlesResponse] =
     articleRepository
       .feed(userId, pagination)
-      .map(page =>
-        toArticlesResponse(
-          page,
-          _ => false,
-          _ => 0,
-          _ => true
-        )
-      )
+      .map(toArticlesResponse)
 
   override def find(viewerId: Option[UserId], slug: String): F[Option[Article]] =
     articleRepository
-      .findBySlug(slug)
-      .map(
-        _.map(stored =>
-          toArticle(
-            stored = stored,
-            favorited = false,
-            favoritesCount = 0,
-            following = false
-          )
-        )
-      )
+      .findBySlug(slug, viewerId)
+      .map(_.map(toArticle))
 
   override def update(authorId: UserId, slug: String, update: UpdateArticle): F[Article] =
     for
@@ -152,7 +109,15 @@ final class LiveArticleService[F[_]: Async](articleRepository: ArticleRepository
         update = update,
         updatedAt = now
       )
-    yield toArticle(updatedStored, favorited = false, favoritesCount = 0, following = false)
+    yield toArticle(updatedStored)
+
+  override def favorite(userId: UserId, slug: String): F[Article] =
+    for stored <- articleRepository.favorite(userId, slug)
+    yield toArticle(stored)
+
+  override def unfavorite(userId: UserId, slug: String): F[Article] =
+    for stored <- articleRepository.unfavorite(userId, slug)
+    yield toArticle(stored)
 
   override def delete(authorId: UserId, slug: String): F[Unit] =
     articleRepository.delete(authorId, slug)

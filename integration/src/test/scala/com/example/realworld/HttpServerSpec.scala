@@ -94,7 +94,10 @@ class HttpServerSpec extends CatsEffectSuite:
       expectedDescription: String,
       expectedBody: String,
       expectedTags: List[String],
-      expectedAuthorUsername: String
+      expectedAuthorUsername: String,
+      expectedFavorited: Boolean = false,
+      expectedFavoritesCount: Int = 0,
+      expectedFollowing: Boolean = false
   ): IO[ArticleResponse] =
     for
       body <- response.as[String]
@@ -105,12 +108,12 @@ class HttpServerSpec extends CatsEffectSuite:
       _ = assertEquals(article.description, expectedDescription)
       _ = assertEquals(article.body, expectedBody)
       _ = assertEquals(article.tagList, expectedTags)
-      _ = assertEquals(article.favorited, false)
-      _ = assertEquals(article.favoritesCount, 0)
+      _ = assertEquals(article.favorited, expectedFavorited)
+      _ = assertEquals(article.favoritesCount, expectedFavoritesCount)
       _ = assert(!article.createdAt.isBefore(Instant.EPOCH), clue(article.createdAt))
       _ = assert(!article.updatedAt.isBefore(article.createdAt), clue(article.updatedAt))
       _ = assertEquals(article.author.username, expectedAuthorUsername)
-      _ = assertEquals(article.author.following, false)
+      _ = assertEquals(article.author.following, expectedFollowing)
       _ = assertEquals(article.author.bio, None)
       _ = assertEquals(article.author.image, None)
     yield decoded
@@ -383,6 +386,125 @@ class HttpServerSpec extends CatsEffectSuite:
         getRequest = Request[IO](Method.GET, uri"/api/articles" / createdArticle.article.slug)
         getResponse <- httpApp.run(getRequest)
         _ = assertEquals(getResponse.status, Status.NotFound)
+      yield ()
+
+    result
+
+  test("favorite article endpoint toggles favorite status for the reader"):
+    val httpApp = httpAppFixture()
+    val authorPayload =
+      """{"user":{"username":"FavAuthor","email":"author-fav@example.com","password":"secretpass"}}"""
+    val readerPayload =
+      """{"user":{"username":"FavReader","email":"reader@example.com","password":"anotherpass"}}"""
+    val articlePayload =
+      """{"article":{"title":"Favorite me","description":"Please do","body":"Pretty please","tagList":["tag"]}}"""
+
+    val authorRequest = Request[IO](
+      Method.POST,
+      uri"/api/users",
+      headers = Headers(`Content-Type`(MediaType.application.json)),
+      body = Stream.emits(authorPayload.getBytes(StandardCharsets.UTF_8)).covary[IO]
+    )
+
+    val readerRequest = Request[IO](
+      Method.POST,
+      uri"/api/users",
+      headers = Headers(`Content-Type`(MediaType.application.json)),
+      body = Stream.emits(readerPayload.getBytes(StandardCharsets.UTF_8)).covary[IO]
+    )
+
+    val createBody = Stream.emits(articlePayload.getBytes(StandardCharsets.UTF_8)).covary[IO]
+
+    val result =
+      for
+        authorResponse <- httpApp.run(authorRequest)
+        _ = assertEquals(authorResponse.status, Status.Ok)
+        (authorUserResponse, _) <-
+          assertUserPayload(authorResponse, "author-fav@example.com", "FavAuthor")
+        authorToken = authorUserResponse.user.token
+        createRequest = Request[IO](
+          Method.POST,
+          uri"/api/articles",
+          headers = Headers(
+            Authorization(Credentials.Token(AuthScheme.Bearer, authorToken)),
+            `Content-Type`(MediaType.application.json)
+          ),
+          body = createBody
+        )
+        createResponse <- httpApp.run(createRequest)
+        _ = assertEquals(createResponse.status, Status.Created)
+        createdArticle <-
+          assertArticlePayload(
+            createResponse,
+            expectedSlug = "favorite-me",
+            expectedTitle = "Favorite me",
+            expectedDescription = "Please do",
+            expectedBody = "Pretty please",
+            expectedTags = List("tag"),
+            expectedAuthorUsername = "FavAuthor"
+          )
+        readerResponse <- httpApp.run(readerRequest)
+        _ = assertEquals(readerResponse.status, Status.Ok)
+        (readerUserResponse, _) <-
+          assertUserPayload(readerResponse, "reader@example.com", "FavReader")
+        readerToken = readerUserResponse.user.token
+        favoriteRequest = Request[IO](
+          Method.POST,
+          uri"/api/articles" / createdArticle.article.slug / "favorite",
+          headers = Headers(Authorization(Credentials.Token(AuthScheme.Bearer, readerToken)))
+        )
+        favoriteResponse <- httpApp.run(favoriteRequest)
+        _ = assertEquals(favoriteResponse.status, Status.Ok)
+        _ <-
+          assertArticlePayload(
+            favoriteResponse,
+            expectedSlug = createdArticle.article.slug,
+            expectedTitle = "Favorite me",
+            expectedDescription = "Please do",
+            expectedBody = "Pretty please",
+            expectedTags = List("tag"),
+            expectedAuthorUsername = "FavAuthor",
+            expectedFavorited = true,
+            expectedFavoritesCount = 1
+          )
+        getFavoritedRequest = Request[IO](
+          Method.GET,
+          uri"/api/articles" / createdArticle.article.slug,
+          headers = Headers(Authorization(Credentials.Token(AuthScheme.Bearer, readerToken)))
+        )
+        getFavoritedResponse <- httpApp.run(getFavoritedRequest)
+        _ = assertEquals(getFavoritedResponse.status, Status.Ok)
+        _ <-
+          assertArticlePayload(
+            getFavoritedResponse,
+            expectedSlug = createdArticle.article.slug,
+            expectedTitle = "Favorite me",
+            expectedDescription = "Please do",
+            expectedBody = "Pretty please",
+            expectedTags = List("tag"),
+            expectedAuthorUsername = "FavAuthor",
+            expectedFavorited = true,
+            expectedFavoritesCount = 1
+          )
+        unfavoriteRequest = Request[IO](
+          Method.DELETE,
+          uri"/api/articles" / createdArticle.article.slug / "favorite",
+          headers = Headers(Authorization(Credentials.Token(AuthScheme.Bearer, readerToken)))
+        )
+        unfavoriteResponse <- httpApp.run(unfavoriteRequest)
+        _ = assertEquals(unfavoriteResponse.status, Status.Ok)
+        _ <-
+          assertArticlePayload(
+            unfavoriteResponse,
+            expectedSlug = createdArticle.article.slug,
+            expectedTitle = "Favorite me",
+            expectedDescription = "Please do",
+            expectedBody = "Pretty please",
+            expectedTags = List("tag"),
+            expectedAuthorUsername = "FavAuthor",
+            expectedFavorited = false,
+            expectedFavoritesCount = 0
+          )
       yield ()
 
     result

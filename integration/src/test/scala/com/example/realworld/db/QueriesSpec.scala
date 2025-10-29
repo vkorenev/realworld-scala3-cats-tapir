@@ -88,11 +88,17 @@ class QueriesSpec extends CatsEffectSuite with IOChecker:
   test("deleteArticle"):
     check(deleteArticle(ArticleId(0)))
 
+  test("insertArticleFavorite"):
+    check(insertArticleFavorite(ArticleId(0), UserId(0)))
+
+  test("deleteArticleFavorite"):
+    check(deleteArticleFavorite(ArticleId(0), UserId(0)))
+
   test("selectArticleSlugsLike"):
     check(selectArticleSlugsLike(""))
 
   test("selectArticles with empty filters"):
-    check(selectArticles(emptyFilters, limit = 0, offset = 0))
+    check(selectArticles(emptyFilters, viewerId = None, limit = 0, offset = 0))
 
   test("selectArticlesCount with empty filters"):
     check(selectArticlesCount(emptyFilters))

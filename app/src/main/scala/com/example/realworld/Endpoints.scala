@@ -257,6 +257,26 @@ case class Endpoints[F[_]: Async](
       articleService.delete(authorId, slug)
     }
 
+  private def favoriteArticleEndpoint = secureEndpoint.post
+    .in("api" / "articles" / path[String]("slug") / "favorite")
+    .out(jsonBody[ArticleResponse])
+    .description("Favorite an article")
+    .tag("Favorites")
+    .errorOutVariantPrepend(oneOfVariant(statusCode(StatusCode.NotFound).and(jsonBody[NotFound])))
+    .serverLogicRecoverErrors { userId => slug =>
+      articleService.favorite(userId, slug).map(ArticleResponse.apply)
+    }
+
+  private def unfavoriteArticleEndpoint = secureEndpoint.delete
+    .in("api" / "articles" / path[String]("slug") / "favorite")
+    .out(jsonBody[ArticleResponse])
+    .description("Unfavorite an article")
+    .tag("Favorites")
+    .errorOutVariantPrepend(oneOfVariant(statusCode(StatusCode.NotFound).and(jsonBody[NotFound])))
+    .serverLogicRecoverErrors { userId => slug =>
+      articleService.unfavorite(userId, slug).map(ArticleResponse.apply)
+    }
+
   def routes: HttpRoutes[F] =
     val serverEndpoints = List(
       livenessEndpoint,
@@ -272,7 +292,9 @@ case class Endpoints[F[_]: Async](
       getArticleEndpoint,
       createArticleEndpoint,
       updateArticleEndpoint,
-      deleteArticleEndpoint
+      deleteArticleEndpoint,
+      favoriteArticleEndpoint,
+      unfavoriteArticleEndpoint
     )
 
     val swaggerEndpoints =

@@ -19,7 +19,7 @@ import java.time.Instant
 
 object Queries:
 
-  private def filtersFragment(filters: ArticleFilters): Fragment =
+  private def articleFilters(filters: ArticleFilters): Fragment =
     whereAndOpt(
       filters.author.map(author => fr"u.username = $author"),
       filters.tag.map(tag => fr"""
@@ -38,6 +38,31 @@ object Queries:
           )
         """)
     )
+
+  private def followingColumn(viewerId: Option[UserId]): Fragment = viewerId match
+    case Some(id) =>
+      fr"""
+        COALESCE(
+          (
+            SELECT TRUE
+            FROM user_follows uf
+            WHERE uf.follower_id = $id AND uf.followed_id = a.author_id
+          ),
+          FALSE
+        )
+      """
+    case None => fr"FALSE"
+
+  private def favoritedColumn(viewerId: Option[UserId]): Fragment = viewerId match
+    case Some(id) =>
+      fr"""
+        EXISTS (
+          SELECT 1
+          FROM article_favorites fav_view
+          WHERE fav_view.article_id = a.id AND fav_view.user_id = $id
+        )
+      """
+    case None => fr"FALSE"
 
   def insertUser(username: String, email: String, passwordHash: String): Update0 =
     sql"""
@@ -144,6 +169,19 @@ object Queries:
       WHERE id = $id
     """.update
 
+  def insertArticleFavorite(articleId: ArticleId, userId: UserId): Update0 =
+    sql"""
+      INSERT INTO article_favorites (article_id, user_id)
+      VALUES ($articleId, $userId)
+      ON CONFLICT DO NOTHING
+    """.update
+
+  def deleteArticleFavorite(articleId: ArticleId, userId: UserId): Update0 =
+    sql"""
+      DELETE FROM article_favorites
+      WHERE article_id = $articleId AND user_id = $userId
+    """.update
+
   val insertArticleTag: Update[(ArticleId, String)] =
     Update[(ArticleId, String)](
       "INSERT INTO article_tags (article_id, tag) VALUES (?, ?)"
@@ -158,6 +196,7 @@ object Queries:
 
   def selectArticles(
       filters: ArticleFilters,
+      viewerId: Option[UserId],
       limit: Long,
       offset: Long
   ): Query0[StoredArticle] =
@@ -175,16 +214,23 @@ object Queries:
                ),
                ARRAY[]::text[]
              ) AS tags,
+             ${favoritedColumn(viewerId)} AS favorited,
+             (
+               SELECT COUNT(*)
+               FROM article_favorites fav_count
+               WHERE fav_count.article_id = a.id
+             )::int AS favorites_count,
              a.created_at,
              a.updated_at,
              u.id,
              u.email,
              u.username,
              u.bio,
-             u.image
+             u.image,
+             ${followingColumn(viewerId)} AS following
       FROM articles a
       JOIN users u ON a.author_id = u.id
-      ${filtersFragment(filters)}
+      ${articleFilters(filters)}
       ORDER BY a.created_at DESC, a.id DESC
       LIMIT $limit OFFSET $offset
     """.query[StoredArticle]
@@ -196,7 +242,7 @@ object Queries:
         SELECT DISTINCT a.id
         FROM articles a
         JOIN users u ON a.author_id = u.id
-      ${filtersFragment(filters)}
+      ${articleFilters(filters)}
       ) counted
     """.query[Long]
 
@@ -219,13 +265,20 @@ object Queries:
                ),
                ARRAY[]::text[]
              ) AS tags,
+             ${favoritedColumn(Some(userId))} AS favorited,
+             (
+               SELECT COUNT(*)
+               FROM article_favorites fav_count
+               WHERE fav_count.article_id = a.id
+             )::int AS favorites_count,
              a.created_at,
              a.updated_at,
              u.id,
              u.email,
              u.username,
              u.bio,
-             u.image
+             u.image,
+             TRUE AS following
       FROM articles a
       JOIN user_follows f ON f.followed_id = a.author_id
       JOIN users u ON a.author_id = u.id
@@ -245,7 +298,7 @@ object Queries:
       ) counted
     """.query[Long]
 
-  def selectArticleBySlug(slug: String): Query0[StoredArticle] =
+  def selectArticleBySlug(slug: String, viewerId: Option[UserId]): Query0[StoredArticle] =
     sql"""
       SELECT a.id,
              a.slug,
@@ -260,13 +313,20 @@ object Queries:
                ),
                ARRAY[]::text[]
              ) AS tags,
+             ${favoritedColumn(viewerId)} AS favorited,
+             (
+               SELECT COUNT(*)
+               FROM article_favorites fav_count
+               WHERE fav_count.article_id = a.id
+             )::int AS favorites_count,
              a.created_at,
              a.updated_at,
              u.id,
              u.email,
              u.username,
              u.bio,
-             u.image
+             u.image,
+             ${followingColumn(viewerId)} AS following
       FROM articles a
       JOIN users u ON a.author_id = u.id
       WHERE a.slug = $slug

@@ -23,15 +23,21 @@ import java.util.Locale
 
 trait ArticleRepository[F[_]]:
   def create(authorId: UserId, article: NewArticle, at: Instant): F[StoredArticle]
-  def list(filters: ArticleFilters, pagination: Pagination): F[ArticlePage]
+  def list(
+      viewerId: Option[UserId],
+      filters: ArticleFilters,
+      pagination: Pagination
+  ): F[ArticlePage]
   def feed(userId: UserId, pagination: Pagination): F[ArticlePage]
-  def findBySlug(slug: String): F[Option[StoredArticle]]
+  def findBySlug(slug: String, viewerId: Option[UserId]): F[Option[StoredArticle]]
   def update(
       authorId: UserId,
       slug: String,
       update: UpdateArticle,
       updatedAt: Instant
   ): F[StoredArticle]
+  def favorite(userId: UserId, slug: String): F[StoredArticle]
+  def unfavorite(userId: UserId, slug: String): F[StoredArticle]
   def delete(authorId: UserId, slug: String): F[Unit]
 
 final case class StoredArticle(
@@ -41,9 +47,11 @@ final case class StoredArticle(
     description: String,
     body: String,
     tagList: List[String],
+    favorited: Boolean,
+    favoritesCount: Int,
     createdAt: Instant,
     updatedAt: Instant,
-    author: StoredUser
+    author: StoredProfile
 ) derives Read
 
 final case class ArticleFilters(
@@ -101,7 +109,7 @@ final class DoobieArticleRepository[F[_]: Async](xa: Transactor[F]) extends Arti
         .distinct
 
     (for
-      author <- Queries.selectUserById(authorId).unique
+      authorUser <- Queries.selectUserById(authorId).unique
       slug <- ensureUniqueSlug(baseSlug, excludeSlug = None)
       articleId <- Queries
         .insertArticle(slug, article, authorId, at)
@@ -116,17 +124,25 @@ final class DoobieArticleRepository[F[_]: Async](xa: Transactor[F]) extends Arti
       description = article.description,
       body = article.body,
       tagList = sanitizedTags,
+      favorited = false,
+      favoritesCount = 0,
       createdAt = at,
       updatedAt = at,
-      author = author
+      author = StoredProfile(authorUser, following = false)
     )).transact(xa)
 
-  override def list(filters: ArticleFilters, pagination: Pagination): F[ArticlePage] =
+  override def list(
+      viewerId: Option[UserId],
+      filters: ArticleFilters,
+      pagination: Pagination
+  ): F[ArticlePage] =
     val normalizedLimit = pagination.limit.max(0)
     val normalizedOffset = pagination.offset.max(0)
 
     (for
-      articles <- Queries.selectArticles(filters, normalizedLimit, normalizedOffset).to[List]
+      articles <- Queries
+        .selectArticles(filters, viewerId, normalizedLimit, normalizedOffset)
+        .to[List]
       total <- Queries.selectArticlesCount(filters).unique
     yield ArticlePage(
       articles = articles,
@@ -145,8 +161,24 @@ final class DoobieArticleRepository[F[_]: Async](xa: Transactor[F]) extends Arti
       articlesCount = total.toInt
     )).transact(xa)
 
-  override def findBySlug(slug: String): F[Option[StoredArticle]] =
-    Queries.selectArticleBySlug(slug).option.transact(xa)
+  override def findBySlug(slug: String, viewerId: Option[UserId]): F[Option[StoredArticle]] =
+    Queries.selectArticleBySlug(slug, viewerId).option.transact(xa)
+
+  override def favorite(userId: UserId, slug: String): F[StoredArticle] =
+    (for
+      existingOpt <- Queries.selectArticleBySlug(slug, viewerId = Some(userId)).option
+      existing <- ApplicativeThrow[ConnectionIO].fromOption(existingOpt, NotFound())
+      _ <- Queries.insertArticleFavorite(existing.id, userId).run.void
+      updated <- Queries.selectArticleBySlug(slug, viewerId = Some(userId)).unique
+    yield updated).transact(xa)
+
+  override def unfavorite(userId: UserId, slug: String): F[StoredArticle] =
+    (for
+      existingOpt <- Queries.selectArticleBySlug(slug, viewerId = Some(userId)).option
+      existing <- ApplicativeThrow[ConnectionIO].fromOption(existingOpt, NotFound())
+      _ <- Queries.deleteArticleFavorite(existing.id, userId).run.void
+      updated <- Queries.selectArticleBySlug(slug, viewerId = Some(userId)).unique
+    yield updated).transact(xa)
 
   override def update(
       authorId: UserId,
@@ -155,9 +187,11 @@ final class DoobieArticleRepository[F[_]: Async](xa: Transactor[F]) extends Arti
       updatedAt: Instant
   ): F[StoredArticle] =
     (for
-      existingOpt <- Queries.selectArticleBySlug(slug).option
+      existingOpt <- Queries.selectArticleBySlug(slug, viewerId = Some(authorId)).option
       existing <- ApplicativeThrow[ConnectionIO].fromOption(existingOpt, NotFound())
-      _ <- ApplicativeThrow[ConnectionIO].raiseWhen(existing.author.id != authorId)(Unauthorized())
+      _ <- ApplicativeThrow[ConnectionIO].raiseWhen(existing.author.user.id != authorId)(
+        Unauthorized()
+      )
       newTitle = update.title.getOrElse(existing.title)
       newDescription = update.description.getOrElse(existing.description)
       newBody = update.body.getOrElse(existing.body)
@@ -179,18 +213,15 @@ final class DoobieArticleRepository[F[_]: Async](xa: Transactor[F]) extends Arti
           )
           .run
           .void
-    yield existing.copy(
-      slug = newSlug,
-      title = newTitle,
-      description = newDescription,
-      body = newBody,
-      updatedAt = updatedAt
-    )).transact(xa)
+      refreshed <- Queries.selectArticleBySlug(newSlug, viewerId = Some(authorId)).unique
+    yield refreshed).transact(xa)
 
   override def delete(authorId: UserId, slug: String): F[Unit] =
     (for
-      existingOpt <- Queries.selectArticleBySlug(slug).option
+      existingOpt <- Queries.selectArticleBySlug(slug, viewerId = None).option
       existing <- ApplicativeThrow[ConnectionIO].fromOption(existingOpt, NotFound())
-      _ <- ApplicativeThrow[ConnectionIO].raiseWhen(existing.author.id != authorId)(Unauthorized())
+      _ <- ApplicativeThrow[ConnectionIO].raiseWhen(existing.author.user.id != authorId)(
+        Unauthorized()
+      )
       _ <- Queries.deleteArticle(existing.id).run.void
     yield ()).transact(xa)

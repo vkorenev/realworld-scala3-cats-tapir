@@ -32,7 +32,7 @@ final case class StoredUser(
 final case class StoredProfile(
     user: StoredUser,
     following: Boolean
-)
+) derives Read
 
 final case class DoobieUserRepository[F[_]: Async](
     xa: Transactor[F],
