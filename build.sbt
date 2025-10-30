@@ -41,7 +41,6 @@ lazy val app = (project in file("app"))
     log4j2Bom
   )
   .settings(
-    name := "realworld-backend",
     libraryDependencies ++= Seq(
       "co.fs2" %% "fs2-core" % fs2Version,
       "co.fs2" %% "fs2-io" % fs2Version,
@@ -108,3 +107,6 @@ lazy val integration = (project in file("integration"))
 
 lazy val root = (project in file("."))
   .aggregate(app, integration)
+  .settings(
+    name := "realworld-conduit-backend"
+  )
