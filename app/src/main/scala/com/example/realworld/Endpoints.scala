@@ -10,6 +10,7 @@ import com.example.realworld.model.MultipleArticlesResponse
 import com.example.realworld.model.NewArticleRequest
 import com.example.realworld.model.NewUserRequest
 import com.example.realworld.model.ProfileResponse
+import com.example.realworld.model.TagsResponse
 import com.example.realworld.model.UpdateArticleRequest
 import com.example.realworld.model.UpdateUserRequest
 import com.example.realworld.model.UserId
@@ -277,6 +278,13 @@ case class Endpoints[F[_]: Async](
       articleService.unfavorite(userId, slug).map(ArticleResponse.apply)
     }
 
+  private def listTagsEndpoint = endpoint.get
+    .in("api" / "tags")
+    .out(jsonBody[TagsResponse])
+    .description("Get all tags")
+    .tag("Tags")
+    .serverLogicSuccess[F](_ => articleService.listTags.map(TagsResponse.apply))
+
   def routes: HttpRoutes[F] =
     val serverEndpoints = List(
       livenessEndpoint,
@@ -294,7 +302,8 @@ case class Endpoints[F[_]: Async](
       updateArticleEndpoint,
       deleteArticleEndpoint,
       favoriteArticleEndpoint,
-      unfavoriteArticleEndpoint
+      unfavoriteArticleEndpoint,
+      listTagsEndpoint
     )
 
     val swaggerEndpoints =

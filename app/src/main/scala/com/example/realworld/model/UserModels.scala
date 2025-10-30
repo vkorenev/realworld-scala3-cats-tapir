@@ -1,7 +1,12 @@
 package com.example.realworld.model
 
+import com.github.plokhotnyuk.jsoniter_scala.macros.CodecMakerConfig
 import com.github.plokhotnyuk.jsoniter_scala.macros.ConfiguredJsonValueCodec
 import sttp.tapir.Schema
+
+inline given CodecMakerConfig = CodecMakerConfig
+  .withTransientEmpty(false)
+  .withTransientNone(false)
 
 final case class NewUser(username: String, email: String, password: String)
     derives ConfiguredJsonValueCodec,

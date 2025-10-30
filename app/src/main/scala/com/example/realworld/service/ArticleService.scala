@@ -28,6 +28,7 @@ trait ArticleService[F[_]]:
   def favorite(userId: UserId, slug: String): F[Article]
   def unfavorite(userId: UserId, slug: String): F[Article]
   def delete(authorId: UserId, slug: String): F[Unit]
+  def listTags: F[List[String]]
 
 final class LiveArticleService[F[_]: Async](articleRepository: ArticleRepository[F])
     extends ArticleService[F]:
@@ -121,6 +122,9 @@ final class LiveArticleService[F[_]: Async](articleRepository: ArticleRepository
 
   override def delete(authorId: UserId, slug: String): F[Unit] =
     articleRepository.delete(authorId, slug)
+
+  override def listTags: F[List[String]] =
+    articleRepository.listTags
 
 object ArticleService:
   def live[F[_]: Async](articleRepository: ArticleRepository[F]): ArticleService[F] =

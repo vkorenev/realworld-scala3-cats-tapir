@@ -8,6 +8,7 @@ import com.example.realworld.db.PostgresTestContainer
 import com.example.realworld.db.TestDatabaseConfig
 import com.example.realworld.model.ArticleResponse
 import com.example.realworld.model.ProfileResponse
+import com.example.realworld.model.TagsResponse
 import com.example.realworld.model.UserId
 import com.example.realworld.model.UserResponse
 import com.example.realworld.repository.DoobieArticleRepository
@@ -248,6 +249,67 @@ class HttpServerSpec extends CatsEffectSuite:
             expectedTags = List("rust", "systems"),
             expectedAuthorUsername = "Jessie"
           )
+      yield ()
+
+    result
+
+  test("list tags endpoint returns unique tags without authentication"):
+    val httpApp = httpAppFixture()
+    val registerPayload =
+      """{"user":{"username":"TagCollector","email":"tagger@example.com","password":"secretpass"}}"""
+    val registerRequest = Request[IO](
+      Method.POST,
+      uri"/api/users",
+      headers = Headers(`Content-Type`(MediaType.application.json)),
+      body = Stream.emits(registerPayload.getBytes(StandardCharsets.UTF_8)).covary[IO]
+    )
+
+    val firstArticlePayload =
+      """{"article":{"title":"Tech trends","description":"Latest trends","body":"Stay curious","tagList":["reactjs","angularjs"]}}"""
+
+    val secondArticlePayload =
+      """{"article":{"title":"Dragon tales","description":"Stories","body":"Believe","tagList":["dragons","reactjs"]}}"""
+
+    val result =
+      for
+        registerResponse <- httpApp.run(registerRequest)
+        _ = assertEquals(registerResponse.status, Status.Ok)
+        (userResponse, _) <- assertUserPayload(
+          registerResponse,
+          "tagger@example.com",
+          "TagCollector"
+        )
+        token = userResponse.user.token
+        firstCreateRequest = Request[IO](
+          Method.POST,
+          uri"/api/articles",
+          headers = Headers(
+            Authorization(Credentials.Token(AuthScheme.Bearer, token)),
+            `Content-Type`(MediaType.application.json)
+          ),
+          body = Stream.emits(firstArticlePayload.getBytes(StandardCharsets.UTF_8)).covary[IO]
+        )
+        firstCreateResponse <- httpApp.run(firstCreateRequest)
+        _ = assertEquals(firstCreateResponse.status, Status.Created)
+        secondCreateRequest = Request[IO](
+          Method.POST,
+          uri"/api/articles",
+          headers = Headers(
+            Authorization(Credentials.Token(AuthScheme.Bearer, token)),
+            `Content-Type`(MediaType.application.json)
+          ),
+          body = Stream.emits(secondArticlePayload.getBytes(StandardCharsets.UTF_8)).covary[IO]
+        )
+        secondCreateResponse <- httpApp.run(secondCreateRequest)
+        _ = assertEquals(secondCreateResponse.status, Status.Created)
+        tagsRequest = Request[IO](Method.GET, uri"/api/tags")
+        tagsResponse <- httpApp.run(tagsRequest)
+        _ = assertEquals(tagsResponse.status, Status.Ok)
+        tagsBody <- tagsResponse.as[String]
+        decoded = readFromString[TagsResponse](tagsBody)
+        expectedTags = Set("angularjs", "dragons", "reactjs")
+        _ = assertEquals(decoded.tags.sorted, decoded.tags)
+        _ = assert(expectedTags.subsetOf(decoded.tags.toSet), clue(decoded.tags))
       yield ()
 
     result

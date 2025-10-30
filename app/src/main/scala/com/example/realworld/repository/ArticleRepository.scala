@@ -39,6 +39,7 @@ trait ArticleRepository[F[_]]:
   def favorite(userId: UserId, slug: String): F[StoredArticle]
   def unfavorite(userId: UserId, slug: String): F[StoredArticle]
   def delete(authorId: UserId, slug: String): F[Unit]
+  def listTags: F[List[String]]
 
 final case class StoredArticle(
     id: ArticleId,
@@ -225,3 +226,6 @@ final class DoobieArticleRepository[F[_]: Async](xa: Transactor[F]) extends Arti
       )
       _ <- Queries.deleteArticle(existing.id).run.void
     yield ()).transact(xa)
+
+  override def listTags: F[List[String]] =
+    Queries.selectTags.to[List].transact(xa)

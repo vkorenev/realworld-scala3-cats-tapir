@@ -187,6 +187,13 @@ object Queries:
       "INSERT INTO article_tags (article_id, tag) VALUES (?, ?)"
     )
 
+  def selectTags: Query0[String] =
+    sql"""
+      SELECT DISTINCT tag
+      FROM article_tags
+      ORDER BY tag
+    """.query[String]
+
   def selectArticleSlugsLike(pattern: String): Query0[String] =
     sql"""
       SELECT slug
