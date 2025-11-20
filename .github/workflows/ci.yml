@@ -7,15 +7,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
-      - name: Setup JDK
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: 21
-          cache: sbt
-      - name: Setup sbt launcher
-        uses: sbt/setup-sbt@v1
+        uses: actions/checkout@v6
+      - name: Set up SBT Cache
+        uses: coursier/cache-action@v7
+      - name: Install SDKs and Tools
+        uses: jdx/mise-action@v3
       - name: Build and Test
         run: sbt "scalafmtCheckAll; scalafixAll --check; +test"
       - name: Update Dependency Graph
