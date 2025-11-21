@@ -1,0 +1,46 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+jobs:
+  publish:
+    name: Publish Container Image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Install SDKs and Tools
+        uses: jdx/mise-action@v3
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ vars.GCP_PROJECT }}
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+      - name: Build and Publish Container Image
+        env:
+          CONTAINER_REPOSITORY_NAME: ${{ vars.container_repository_name }}
+        run: |
+          JIB_REGISTRY="${CONTAINER_REPOSITORY_NAME%%/*}"
+          JIB_ORGANIZATION="${CONTAINER_REPOSITORY_NAME#*/}"
+
+          if [ "$JIB_REGISTRY" = "$JIB_ORGANIZATION" ]; then
+            echo "GitHub variable 'container_repository_name' must include at least one '/' separator." >&2
+            exit 1
+          fi
+
+          sbt \
+            "scalafmtCheckAll; scalafixAll --check; +test" \
+            "set app / jibRegistry := \"${JIB_REGISTRY}\"" \
+            "set app / jibOrganization := \"${JIB_ORGANIZATION}\"" \
+            "app / jibJavaImageBuild"
+      - name: Update Dependency Graph
+        uses: scalacenter/sbt-dependency-submission@v3
+        with:
+          configs-ignore: scala-tool scala-doc-tool test

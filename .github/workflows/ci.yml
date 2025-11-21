@@ -1,7 +1,6 @@
 name: CI
 on:
   pull_request:
-  push:
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -14,8 +13,3 @@ jobs:
         uses: jdx/mise-action@v3
       - name: Build and Test
         run: sbt "scalafmtCheckAll; scalafixAll --check; +test"
-      - name: Update Dependency Graph
-        if: github.ref == 'refs/heads/master'
-        uses: scalacenter/sbt-dependency-submission@v3
-        with:
-          configs-ignore: scala-tool scala-doc-tool test

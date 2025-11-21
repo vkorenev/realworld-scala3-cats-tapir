@@ -1,3 +1,5 @@
 [tools]
 java = "temurin-21"
+opentofu = "1.10"
 sbt = "1.11"
+terragrunt = "0.93"

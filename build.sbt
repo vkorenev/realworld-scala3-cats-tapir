@@ -1,3 +1,4 @@
+val projectName = "realworld-conduit-backend"
 val isRunningInCi = sys.env.get("CI").contains("true")
 
 ThisBuild / tpolecatDefaultOptionsMode := {
@@ -72,6 +73,9 @@ lazy val app = (project in file("app"))
     Compile / run / fork := true,
     Test / fork := true,
     javaOptions ++= jvmOptions,
+    jibJvmFlags := jvmOptions,
+    jibBaseImage := "eclipse-temurin:21-jre",
+    jibName := projectName,
     testFrameworks += new TestFramework("munit.Framework"),
     scalacOptions ++= Seq(
       "-Wsafe-init",
@@ -108,5 +112,5 @@ lazy val integration = (project in file("integration"))
 lazy val root = (project in file("."))
   .aggregate(app, integration)
   .settings(
-    name := "realworld-conduit-backend"
+    name := projectName
   )

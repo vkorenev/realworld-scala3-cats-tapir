@@ -1,7 +1,16 @@
+# sbt & Metals
 .bloop/
 .bsp/
 .metals/
-.idea/
-.vscode/
 target/
 metals.sbt
+
+# IDE
+.idea/
+.vscode/
+
+# Terraform
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.backup
