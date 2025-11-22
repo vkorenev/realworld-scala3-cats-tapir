@@ -23,9 +23,16 @@ jobs:
         with:
           project_id: ${{ vars.GCP_PROJECT }}
           workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+      - name: Generate version
+        id: version
+        run: |
+          VERSION="1.0.${GITHUB_RUN_NUMBER}"
+          echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Generated version: ${VERSION}"
       - name: Build and Publish Container Image
         env:
           CONTAINER_REPOSITORY_NAME: ${{ vars.container_repository_name }}
+          PROJECT_VERSION: ${{ steps.version.outputs.VERSION }}
         run: |
           JIB_REGISTRY="${CONTAINER_REPOSITORY_NAME%%/*}"
           JIB_ORGANIZATION="${CONTAINER_REPOSITORY_NAME#*/}"
