@@ -23,6 +23,18 @@ module "github-wif" {
   project_id  = var.gcp_project
   pool_id     = "github-${random_id.default.hex}"
   provider_id = "github-oidc-${random_id.default.hex}"
+  attribute_mapping = {
+    "google.subject"                = "assertion.sub"                 # Subject
+    "attribute.sub"                 = "attribute.sub"                 # Subject
+    "attribute.aud"                 = "attribute.aud"                 # Audience
+    "attribute.iss"                 = "attribute.iss"                 # Issuer
+    "attribute.actor"               = "assertion.actor"               # The personal account that initiated the workflow run.
+    "attribute.actor_id"            = "assertion.actor_id"            # The ID of personal account that initiated the workflow run.
+    "attribute.repository"          = "assertion.repository"          # The repository from where the workflow is running
+    "attribute.repository_id"       = "assertion.repository_id"       # The ID of the repository from where the workflow is running.
+    "attribute.repository_owner"    = "assertion.repository_owner"    # The name of the organization in which the repository is stored.
+    "attribute.repository_owner_id" = "assertion.repository_owner_id" # The ID of the organization in which the repository is stored.
+  }
   # Restrict access to the specific GitHub repository
   attribute_condition = "assertion.repository_id == '${local.github_repository_id}'"
 }
