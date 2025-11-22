@@ -54,10 +54,7 @@ jobs:
             "scalafmtCheckAll; scalafixAll --check; +test" \
             "set app / jibRegistry := \"${{ steps.parse_container_repo.outputs.registry }}\"" \
             "set app / jibOrganization := \"${{ steps.parse_container_repo.outputs.namespace }}\"" \
-            "app / jibJavaDockerBuild"
-      - name: Publish Container Image
-        run: |
-          docker push "${{ vars.CONTAINER_REPOSITORY_NAME }}/realworld-conduit-backend:${{ steps.version.outputs.version }}"
+            "app / jibJavaImageBuild"
       - name: Update Dependency Graph
         uses: scalacenter/sbt-dependency-submission@v3
         with:
