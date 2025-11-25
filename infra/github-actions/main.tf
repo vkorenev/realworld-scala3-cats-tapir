@@ -6,7 +6,7 @@ provider "google" {
 
 locals {
   github_repository_id     = data.github_repository.current.repo_id
-  github_actions_principal = "principalSet://iam.googleapis.com/${module.github-wif.pool_name}/attribute.repository_id/${local.github_repository_id}"
+  github_actions_principal = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.repository_id/${local.github_repository_id}"
 }
 
 data "github_repository" "current" {
@@ -17,34 +17,50 @@ resource "random_id" "default" {
   byte_length = 4
 }
 
-module "github-wif" {
-  source      = "Cyclenerd/wif-github/google"
-  version     = "~> 1.0.0"
-  project_id  = var.gcp_project
-  pool_id     = "github-${random_id.default.hex}"
-  provider_id = "github-oidc-${random_id.default.hex}"
-  attribute_mapping = {
-    "google.subject"                = "assertion.sub"                 # Subject
-    "attribute.sub"                 = "attribute.sub"                 # Subject
-    "attribute.aud"                 = "attribute.aud"                 # Audience
-    "attribute.iss"                 = "attribute.iss"                 # Issuer
-    "attribute.actor"               = "assertion.actor"               # The personal account that initiated the workflow run.
-    "attribute.actor_id"            = "assertion.actor_id"            # The ID of personal account that initiated the workflow run.
-    "attribute.repository"          = "assertion.repository"          # The repository from where the workflow is running
-    "attribute.repository_id"       = "assertion.repository_id"       # The ID of the repository from where the workflow is running.
-    "attribute.repository_owner"    = "assertion.repository_owner"    # The name of the organization in which the repository is stored.
-    "attribute.repository_owner_id" = "assertion.repository_owner_id" # The ID of the organization in which the repository is stored.
-  }
-  # Restrict access to the specific GitHub repository
-  attribute_condition = "assertion.repository_id == '${local.github_repository_id}'"
-}
-
 resource "google_project_service" "enabled" {
   for_each = toset([
-    "artifactregistry.googleapis.com",
+    "artifactregistry",
+    "cloudresourcemanager",
+    "iam",
+    "iamcredentials",
+    "sts",
   ])
 
-  service = each.value
+  service            = "${each.value}.googleapis.com"
+  disable_on_destroy = false
+}
+
+resource "google_iam_workload_identity_pool" "github" {
+  project                   = var.gcp_project
+  workload_identity_pool_id = "github-${random_id.default.hex}"
+  display_name              = "github.com"
+  description               = "Workload Identity Pool for GitHub"
+  depends_on                = [google_project_service.enabled]
+}
+
+resource "google_iam_workload_identity_pool_provider" "github_oidc" {
+  project                            = var.gcp_project
+  workload_identity_pool_id          = google_iam_workload_identity_pool.github.workload_identity_pool_id
+  workload_identity_pool_provider_id = "github-oidc-${random_id.default.hex}"
+  display_name                       = "github.com OIDC"
+  description                        = "Workload Identity Pool Provider for GitHub"
+  attribute_mapping = {
+    "google.subject"                = "assertion.sub"
+    "attribute.sub"                 = "attribute.sub"
+    "attribute.aud"                 = "attribute.aud"
+    "attribute.iss"                 = "attribute.iss"
+    "attribute.actor"               = "assertion.actor"
+    "attribute.actor_id"            = "assertion.actor_id"
+    "attribute.repository"          = "assertion.repository"
+    "attribute.repository_id"       = "assertion.repository_id"
+    "attribute.repository_owner"    = "assertion.repository_owner"
+    "attribute.repository_owner_id" = "assertion.repository_owner_id"
+  }
+  attribute_condition = "assertion.repository_id == '${local.github_repository_id}'"
+  oidc {
+    issuer_uri = "https://token.actions.githubusercontent.com"
+  }
+  depends_on = [google_iam_workload_identity_pool.github]
 }
 
 resource "google_artifact_registry_repository" "default" {
@@ -65,7 +81,7 @@ resource "google_storage_bucket_iam_member" "tf_state_github_actions" {
   member = local.github_actions_principal
 }
 
-resource "google_artifact_registry_repository_iam_member" "member" {
+resource "google_artifact_registry_repository_iam_member" "github_actions" {
   location   = google_artifact_registry_repository.default.location
   repository = google_artifact_registry_repository.default.name
   role       = "roles/artifactregistry.writer"
@@ -75,7 +91,7 @@ resource "google_artifact_registry_repository_iam_member" "member" {
 resource "github_actions_variable" "gcp" {
   for_each = {
     (var.github_actions_variable_gcp_project)                = var.gcp_project
-    (var.github_actions_variable_gcp_wif_provider)           = module.github-wif.provider_name
+    (var.github_actions_variable_gcp_wif_provider)           = google_iam_workload_identity_pool_provider.github_oidc.name
     (var.github_actions_variable_contatiner_repository_name) = google_artifact_registry_repository.default.registry_uri
   }
 
