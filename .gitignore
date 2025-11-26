@@ -9,6 +9,10 @@ metals.sbt
 .idea/
 .vscode/
 
+# Mise-en-place
+mise.local.toml
+mise.*.local.toml
+
 # Terraform
 .terraform/
 .terraform.lock.hcl

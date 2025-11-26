@@ -1,9 +1,10 @@
 locals {
-  config_file     = read_tfvars_file("${path_relative_from_include()}/config.tfvars")
-  config          = jsondecode(local.config_file)
-  gcp_project     = local.config.gcp_project
-  gcp_location    = local.config.gcp_location
-  tf_state_bucket = local.config.tf_state_bucket
+  config_file       = read_tfvars_file("${path_relative_from_include()}/config.tfvars")
+  config            = jsondecode(local.config_file)
+  gcp_project       = local.config.gcp_project
+  gcp_location      = local.config.gcp_location
+  tf_state_bucket   = local.config.tf_state_bucket
+  neon_project_name = local.config.neon_project_name
 }
 
 remote_state {

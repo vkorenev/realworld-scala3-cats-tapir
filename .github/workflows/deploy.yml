@@ -46,7 +46,7 @@ jobs:
           VERSION="1.0.${GITHUB_RUN_NUMBER}"
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "Generated version: ${VERSION}"
-      - name: Build Container Image
+      - name: Build and push container image
         env:
           PROJECT_VERSION: ${{ steps.version.outputs.version }}
         run: |
@@ -55,6 +55,11 @@ jobs:
             "set app / jibRegistry := \"${{ steps.parse_container_repo.outputs.registry }}\"" \
             "set app / jibOrganization := \"${{ steps.parse_container_repo.outputs.namespace }}\"" \
             "app / jibJavaImageBuild"
+      - name: Deploy to Cloud Run
+        env:
+          CONTAINER_IMAGE: ${{ vars.CONTAINER_REPOSITORY_NAME }}/realworld-conduit-backend:${{ steps.version.outputs.version }}
+        run:
+          terragrunt --working-dir infra/cloud-run-deploy --non-interactive run --all apply
       - name: Update Dependency Graph
         uses: scalacenter/sbt-dependency-submission@v3
         with:

@@ -8,7 +8,7 @@ variable "tf_state_bucket" {
   type        = string
 }
 
-variable "artifact_registry_location" {
+variable "cloud_run_location" {
   description = "Location for the Artifact Registry"
   type        = string
   default     = "us-central1"
@@ -41,4 +41,10 @@ variable "github_actions_variable_contatiner_repository_name" {
   type        = string
   description = "GitHub Actions variable name for Container Registry URI"
   default     = "container_repository_name"
+}
+
+variable "database_password" {
+  type        = string
+  description = "Database password"
+  sensitive   = true
 }

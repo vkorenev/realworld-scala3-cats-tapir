@@ -3,9 +3,14 @@ include "root" {
   expose = true
 }
 
+dependency "db" {
+  config_path = "../neon-db"
+}
+
 inputs = {
-  gcp_project                = include.root.locals.gcp_project
-  tf_state_bucket            = include.root.locals.tf_state_bucket
-  github_repository          = get_env("GITHUB_REPOSITORY")
-  artifact_registry_location = include.root.locals.gcp_location
+  gcp_project        = include.root.locals.gcp_project
+  tf_state_bucket    = include.root.locals.tf_state_bucket
+  github_repository  = get_env("GITHUB_REPOSITORY")
+  cloud_run_location = include.root.locals.gcp_location
+  database_password  = dependency.db.outputs.database_password
 }

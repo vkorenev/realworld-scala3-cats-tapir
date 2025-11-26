@@ -23,6 +23,8 @@ resource "google_project_service" "enabled" {
     "cloudresourcemanager",
     "iam",
     "iamcredentials",
+    "run",
+    "secretmanager",
     "sts",
   ])
 
@@ -65,7 +67,7 @@ resource "google_iam_workload_identity_pool_provider" "github_oidc" {
 
 resource "google_artifact_registry_repository" "default" {
   repository_id = var.artifact_registry_repository_id
-  location      = var.artifact_registry_location
+  location      = var.cloud_run_location
   format        = "DOCKER"
 
   docker_config {
@@ -98,4 +100,57 @@ resource "github_actions_variable" "gcp" {
   repository    = data.github_repository.current.name
   variable_name = each.key
   value         = each.value
+}
+
+resource "google_service_account" "cloud_run" {
+  account_id   = "realworld-backend-cloud-run"
+  display_name = "Realworld Backend Cloud Run"
+  description  = "Service Account for Cloud Run"
+}
+
+resource "google_project_iam_member" "github_actions_cloud_run" {
+  project = var.gcp_project
+  role    = "roles/run.admin"
+  member  = local.github_actions_principal
+}
+
+resource "google_service_account_iam_member" "github_actions_cloud_run" {
+  service_account_id = google_service_account.cloud_run.id
+  role               = "roles/iam.serviceAccountUser"
+  member             = local.github_actions_principal
+}
+
+resource "google_secret_manager_secret" "cloud_run" {
+  for_each = toset([
+    "database-password",
+    "jwt-secret-key",
+  ])
+
+  secret_id = each.value
+  replication {
+    auto {}
+  }
+  depends_on = [google_project_service.enabled]
+}
+
+resource "google_secret_manager_secret_version" "db_connection_uri" {
+  secret      = google_secret_manager_secret.cloud_run["database-password"].name
+  secret_data = var.database_password
+}
+
+resource "random_password" "jwt_secret_key" {
+  length = 16
+}
+
+resource "google_secret_manager_secret_version" "jwt_secret_key" {
+  secret      = google_secret_manager_secret.cloud_run["jwt-secret-key"].name
+  secret_data = random_password.jwt_secret_key.result
+}
+
+resource "google_secret_manager_secret_iam_member" "secret_access" {
+  for_each = google_secret_manager_secret.cloud_run
+
+  secret_id = each.value.id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = google_service_account.cloud_run.member
 }
