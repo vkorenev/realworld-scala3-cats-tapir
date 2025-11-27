@@ -15,6 +15,5 @@ mise.*.local.toml
 
 # Terraform
 .terraform/
-.terraform.lock.hcl
 *.tfstate
 *.tfstate.backup

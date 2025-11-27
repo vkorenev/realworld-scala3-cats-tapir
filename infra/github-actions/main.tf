@@ -92,9 +92,9 @@ resource "google_artifact_registry_repository_iam_member" "github_actions" {
 
 resource "github_actions_variable" "gcp" {
   for_each = {
-    (var.github_actions_variable_gcp_project)                = var.gcp_project
-    (var.github_actions_variable_gcp_wif_provider)           = google_iam_workload_identity_pool_provider.github_oidc.name
-    (var.github_actions_variable_contatiner_repository_name) = google_artifact_registry_repository.default.registry_uri
+    (var.github_actions_variable_gcp_project)               = var.gcp_project
+    (var.github_actions_variable_gcp_wif_provider)          = google_iam_workload_identity_pool_provider.github_oidc.name
+    (var.github_actions_variable_container_repository_name) = google_artifact_registry_repository.default.registry_uri
   }
 
   repository    = data.github_repository.current.name
@@ -133,7 +133,7 @@ resource "google_secret_manager_secret" "cloud_run" {
   depends_on = [google_project_service.enabled]
 }
 
-resource "google_secret_manager_secret_version" "db_connection_uri" {
+resource "google_secret_manager_secret_version" "database_password" {
   secret      = google_secret_manager_secret.cloud_run["database-password"].name
   secret_data = var.database_password
 }

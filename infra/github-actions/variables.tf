@@ -37,7 +37,7 @@ variable "github_actions_variable_gcp_wif_provider" {
   default     = "gcp_wif_provider"
 }
 
-variable "github_actions_variable_contatiner_repository_name" {
+variable "github_actions_variable_container_repository_name" {
   type        = string
   description = "GitHub Actions variable name for Container Registry URI"
   default     = "container_repository_name"

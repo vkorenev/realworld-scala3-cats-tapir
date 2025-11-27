@@ -1,5 +1,5 @@
 output "cloud_run_service_account_email" {
-  description = "The fully-qualified name of the service account for Cloud Run"
+  description = "The service account email for Cloud Run"
   value       = google_service_account.cloud_run.email
 }
 
