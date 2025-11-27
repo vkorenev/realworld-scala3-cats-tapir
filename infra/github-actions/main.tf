@@ -70,6 +70,21 @@ resource "google_artifact_registry_repository" "default" {
   location      = var.cloud_run_location
   format        = "DOCKER"
 
+  cleanup_policies {
+    id     = "delete-older"
+    action = "DELETE"
+    condition {
+      tag_state = "ANY"
+    }
+  }
+  cleanup_policies {
+    id     = "keep-latest-3"
+    action = "KEEP"
+    most_recent_versions {
+      keep_count = 3
+    }
+  }
+
   docker_config {
     immutable_tags = false
   }
