@@ -2,6 +2,6 @@
 terraform {
   backend "gcs" {
     bucket = "terraform-state-4f1142f501beeaa9"
-    prefix = "github-actions"
+    prefix = "gcp-github-actions-setup"
   }
 }

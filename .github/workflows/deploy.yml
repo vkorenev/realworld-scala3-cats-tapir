@@ -59,7 +59,7 @@ jobs:
         env:
           CONTAINER_IMAGE: ${{ vars.CONTAINER_REPOSITORY_NAME }}/realworld-conduit-backend:${{ steps.version.outputs.version }}
         run:
-          terragrunt --working-dir infra/cloud-run-deploy --non-interactive run --all apply
+          terragrunt --working-dir infra/gcp/cloud-run-deploy --non-interactive run --all apply
       - name: Update Dependency Graph
         uses: scalacenter/sbt-dependency-submission@v3
         with:

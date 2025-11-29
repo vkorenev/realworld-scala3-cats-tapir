@@ -8,7 +8,7 @@ dependency "db" {
 }
 
 dependency "gcp" {
-  config_path = "../github-actions"
+  config_path = "../gcp-github-actions-setup"
 }
 
 inputs = {
