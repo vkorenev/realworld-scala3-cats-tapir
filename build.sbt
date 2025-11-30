@@ -76,6 +76,7 @@ lazy val app = (project in file("app"))
     jibJvmFlags := jvmOptions,
     jibBaseImage := "docker.io/library/eclipse-temurin:21-jre-alpine",
     jibName := projectName,
+    jibTags += "latest",
     testFrameworks += new TestFramework("munit.Framework"),
     scalacOptions ++= Seq(
       "-Wsafe-init",
