@@ -7,7 +7,8 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:-app_password}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-dev-secret-change-me}
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     ports:
       - "8080:8080"
     restart: unless-stopped
@@ -22,6 +23,11 @@ services:
       - "5432:5432"
     volumes:
       - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
 
 volumes:
