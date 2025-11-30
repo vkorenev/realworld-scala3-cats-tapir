@@ -6,7 +6,7 @@ import com.dimafeng.testcontainers.PostgreSQLContainer
 import org.testcontainers.utility.DockerImageName
 
 object PostgresTestContainer:
-  private val image = DockerImageName.parse("postgres:16-alpine")
+  private val image = DockerImageName.parse("postgres:17-alpine")
 
   def resource[F[_]: Async](databaseName: String): Resource[F, PostgreSQLContainer] =
     Resource.make {
