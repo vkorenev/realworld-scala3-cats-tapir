@@ -1,10 +1,12 @@
 package com.example.realworld.db
 
 import com.example.realworld.model.ArticleId
+import com.example.realworld.model.CommentId
 import com.example.realworld.model.NewArticle
 import com.example.realworld.model.UserId
 import com.example.realworld.repository.ArticleFilters
 import com.example.realworld.repository.StoredArticle
+import com.example.realworld.repository.StoredComment
 import com.example.realworld.repository.StoredUser
 import doobie.Query0
 import doobie.Update
@@ -39,30 +41,32 @@ object Queries:
         """)
     )
 
-  private def followingColumn(viewerId: Option[UserId]): Fragment = viewerId match
-    case Some(id) =>
-      fr"""
-        COALESCE(
-          (
-            SELECT TRUE
-            FROM user_follows uf
-            WHERE uf.follower_id = $id AND uf.followed_id = a.author_id
-          ),
-          FALSE
-        )
-      """
-    case None => fr"FALSE"
+  private def followingColumn(viewerId: Option[UserId], followedColumn: Fragment): Fragment =
+    viewerId match
+      case Some(id) =>
+        fr"""
+          COALESCE(
+            (
+              SELECT TRUE
+              FROM user_follows uf
+              WHERE uf.follower_id = $id AND uf.followed_id = $followedColumn
+            ),
+            FALSE
+          )
+        """
+      case None => fr"FALSE"
 
-  private def favoritedColumn(viewerId: Option[UserId]): Fragment = viewerId match
-    case Some(id) =>
-      fr"""
-        EXISTS (
-          SELECT 1
-          FROM article_favorites fav_view
-          WHERE fav_view.article_id = a.id AND fav_view.user_id = $id
-        )
-      """
-    case None => fr"FALSE"
+  private def favoritedColumn(viewerId: Option[UserId]): Fragment =
+    viewerId match
+      case Some(id) =>
+        fr"""
+          EXISTS (
+            SELECT 1
+            FROM article_favorites fav_view
+            WHERE fav_view.article_id = a.id AND fav_view.user_id = $id
+          )
+        """
+      case None => fr"FALSE"
 
   def insertUser(username: String, email: String, passwordHash: String): Update0 =
     sql"""
@@ -234,7 +238,7 @@ object Queries:
              u.username,
              u.bio,
              u.image,
-             ${followingColumn(viewerId)} AS following
+             ${followingColumn(viewerId, fr"a.author_id")} AS following
       FROM articles a
       JOIN users u ON a.author_id = u.id
       ${articleFilters(filters)}
@@ -333,8 +337,68 @@ object Queries:
              u.username,
              u.bio,
              u.image,
-             ${followingColumn(viewerId)} AS following
+             ${followingColumn(viewerId, fr"a.author_id")} AS following
       FROM articles a
       JOIN users u ON a.author_id = u.id
       WHERE a.slug = $slug
     """.query[StoredArticle]
+
+  def selectArticleIdBySlug(slug: String): Query0[ArticleId] =
+    sql"""
+      SELECT id
+      FROM articles
+      WHERE slug = $slug
+    """.query[ArticleId]
+
+  def insertComment(articleId: ArticleId, authorId: UserId, body: String, at: Instant): Update0 =
+    sql"""
+      INSERT INTO article_comments (article_id, author_id, body, created_at, updated_at)
+      VALUES ($articleId, $authorId, $body, $at, $at)
+    """.update
+
+  def selectCommentById(
+      commentId: CommentId,
+      slug: String,
+      viewerId: Option[UserId]
+  ): Query0[StoredComment] =
+    sql"""
+      SELECT c.id,
+             c.body,
+             c.created_at,
+             c.updated_at,
+             u.id,
+             u.email,
+             u.username,
+             u.bio,
+             u.image,
+             ${followingColumn(viewerId, fr"c.author_id")} AS following
+      FROM article_comments c
+      JOIN articles a ON c.article_id = a.id
+      JOIN users u ON c.author_id = u.id
+      WHERE c.id = $commentId AND a.slug = $slug
+    """.query[StoredComment]
+
+  def selectCommentsBySlug(slug: String, viewerId: Option[UserId]): Query0[StoredComment] =
+    sql"""
+      SELECT c.id,
+             c.body,
+             c.created_at,
+             c.updated_at,
+             u.id,
+             u.email,
+             u.username,
+             u.bio,
+             u.image,
+             ${followingColumn(viewerId, fr"c.author_id")} AS following
+      FROM article_comments c
+      JOIN articles a ON c.article_id = a.id
+      JOIN users u ON c.author_id = u.id
+      WHERE a.slug = $slug
+      ORDER BY c.created_at DESC, c.id DESC
+    """.query[StoredComment]
+
+  def deleteComment(commentId: CommentId): Update0 =
+    sql"""
+      DELETE FROM article_comments
+      WHERE id = $commentId
+    """.update

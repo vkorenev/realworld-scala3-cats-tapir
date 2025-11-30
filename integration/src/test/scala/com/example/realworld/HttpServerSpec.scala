@@ -12,9 +12,11 @@ import com.example.realworld.model.TagsResponse
 import com.example.realworld.model.UserId
 import com.example.realworld.model.UserResponse
 import com.example.realworld.repository.DoobieArticleRepository
+import com.example.realworld.repository.DoobieCommentRepository
 import com.example.realworld.repository.DoobieUserRepository
 import com.example.realworld.security.Pbkdf2PasswordHasher
 import com.example.realworld.service.ArticleService
+import com.example.realworld.service.CommentService
 import com.example.realworld.service.UserService
 import com.github.plokhotnyuk.jsoniter_scala.core.readFromString
 import fs2.Stream
@@ -49,7 +51,9 @@ class HttpServerSpec extends CatsEffectSuite:
       userService = UserService.live[IO](userRepository, authToken)
       articleRepository = DoobieArticleRepository[IO](transactor)
       articleService = ArticleService.live[IO](articleRepository)
-    yield Endpoints[IO](userService, articleService, authToken).routes.orNotFound
+      commentRepository = DoobieCommentRepository[IO](transactor)
+      commentService = CommentService.live[IO](commentRepository)
+    yield Endpoints[IO](userService, articleService, commentService, authToken).routes.orNotFound
   )
 
   override def munitFixtures = List(httpAppFixture)

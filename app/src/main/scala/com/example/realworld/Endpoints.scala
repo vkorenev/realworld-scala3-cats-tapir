@@ -5,9 +5,13 @@ import cats.effect.Async
 import cats.syntax.all.*
 import com.example.realworld.auth.AuthToken
 import com.example.realworld.model.ArticleResponse
+import com.example.realworld.model.CommentId
+import com.example.realworld.model.CommentResponse
 import com.example.realworld.model.LoginUserRequest
 import com.example.realworld.model.MultipleArticlesResponse
+import com.example.realworld.model.MultipleCommentsResponse
 import com.example.realworld.model.NewArticleRequest
+import com.example.realworld.model.NewCommentRequest
 import com.example.realworld.model.NewUserRequest
 import com.example.realworld.model.ProfileResponse
 import com.example.realworld.model.TagsResponse
@@ -18,6 +22,7 @@ import com.example.realworld.model.UserResponse
 import com.example.realworld.repository.ArticleFilters
 import com.example.realworld.repository.Pagination
 import com.example.realworld.service.ArticleService
+import com.example.realworld.service.CommentService
 import com.example.realworld.service.UserService
 import org.http4s.HttpRoutes
 import sttp.model.StatusCode
@@ -33,6 +38,7 @@ import sttp.tapir.swagger.bundle.SwaggerInterpreter
 case class Endpoints[F[_]: Async](
     userService: UserService[F],
     articleService: ArticleService[F],
+    commentService: CommentService[F],
     authToken: AuthToken[F]
 ):
   /** API specification uses non-standard authentication scheme */
@@ -258,6 +264,41 @@ case class Endpoints[F[_]: Async](
       articleService.delete(authorId, slug)
     }
 
+  private def addCommentEndpoint = secureEndpoint.post
+    .in("api" / "articles" / path[String]("slug") / "comments")
+    .in(jsonBody[NewCommentRequest])
+    .out(jsonBody[CommentResponse])
+    .description("Create a comment for an article")
+    .tag("Comments")
+    .errorOutVariantPrepend(oneOfVariant(statusCode(StatusCode.NotFound).and(jsonBody[NotFound])))
+    .serverLogicRecoverErrors { userId => params =>
+      val (slug, request) = params
+      commentService
+        .add(userId, slug, request.comment.body)
+        .map(CommentResponse.apply)
+    }
+
+  private def listCommentsEndpoint = optionallySecureEndpoint.get
+    .in("api" / "articles" / path[String]("slug") / "comments")
+    .out(jsonBody[MultipleCommentsResponse])
+    .description("Get comments for an article")
+    .tag("Comments")
+    .errorOutVariantPrepend(oneOfVariant(statusCode(StatusCode.NotFound).and(jsonBody[NotFound])))
+    .serverLogicRecoverErrors { userId => slug =>
+      commentService.list(userId, slug)
+    }
+
+  private def deleteCommentEndpoint = secureEndpoint.delete
+    .in("api" / "articles" / path[String]("slug") / "comments" / path[Long]("id"))
+    .out(statusCode(StatusCode.NoContent))
+    .description("Delete a comment")
+    .tag("Comments")
+    .errorOutVariantPrepend(oneOfVariant(statusCode(StatusCode.NotFound).and(jsonBody[NotFound])))
+    .serverLogicRecoverErrors { userId => params =>
+      val (slug, commentId) = params
+      commentService.delete(userId, slug, CommentId(commentId))
+    }
+
   private def favoriteArticleEndpoint = secureEndpoint.post
     .in("api" / "articles" / path[String]("slug") / "favorite")
     .out(jsonBody[ArticleResponse])
@@ -301,6 +342,9 @@ case class Endpoints[F[_]: Async](
       createArticleEndpoint,
       updateArticleEndpoint,
       deleteArticleEndpoint,
+      addCommentEndpoint,
+      listCommentsEndpoint,
+      deleteCommentEndpoint,
       favoriteArticleEndpoint,
       unfavoriteArticleEndpoint,
       listTagsEndpoint

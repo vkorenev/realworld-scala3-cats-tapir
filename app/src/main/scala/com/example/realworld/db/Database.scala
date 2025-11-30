@@ -67,4 +67,17 @@ object Database:
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
           )
         """.update.run
+      _ <-
+        sql"""
+          CREATE TABLE IF NOT EXISTS article_comments (
+            id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            article_id BIGINT NOT NULL,
+            author_id BIGINT NOT NULL,
+            body TEXT NOT NULL,
+            created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+            updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
+            FOREIGN KEY (article_id) REFERENCES articles(id) ON DELETE CASCADE,
+            FOREIGN KEY (author_id) REFERENCES users(id) ON DELETE CASCADE
+          )
+        """.update.run
     yield ()).transact(xa)
