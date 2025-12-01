@@ -3,6 +3,7 @@ package com.example.realworld.db
 import cats.effect.IO
 import cats.effect.Resource
 import com.example.realworld.model.ArticleId
+import com.example.realworld.model.CommentId
 import com.example.realworld.model.NewArticle
 import com.example.realworld.model.UserId
 import com.example.realworld.repository.ArticleFilters
@@ -39,6 +40,7 @@ class QueriesSpec extends CatsEffectSuite with IOChecker:
     )
 
   private val emptyFilters = ArticleFilters(tag = None, author = None, favorited = None)
+  private val fullFilters = ArticleFilters(tag = Some(""), author = Some(""), favorited = Some(""))
 
   test("insertUser"):
     check(insertUser("", "", ""))
@@ -85,6 +87,9 @@ class QueriesSpec extends CatsEffectSuite with IOChecker:
   test("insertArticleTag"):
     check(insertArticleTag)
 
+  test("selectTags"):
+    check(selectTags)
+
   test("deleteArticle"):
     check(deleteArticle(ArticleId(0)))
 
@@ -100,11 +105,44 @@ class QueriesSpec extends CatsEffectSuite with IOChecker:
   test("selectArticles with empty filters"):
     check(selectArticles(emptyFilters, viewerId = None, limit = 0, offset = 0))
 
+  test("selectArticles with filters and viewer"):
+    check(selectArticles(fullFilters, viewerId = Some(UserId(0)), limit = 10, offset = 5))
+
   test("selectArticlesCount with empty filters"):
     check(selectArticlesCount(emptyFilters))
+
+  test("selectArticlesCount with filters"):
+    check(selectArticlesCount(fullFilters))
 
   test("selectFeedArticles"):
     check(selectFeedArticles(UserId(0), limit = 0, offset = 0))
 
   test("selectFeedCount"):
     check(selectFeedCount(UserId(0)))
+
+  test("selectArticleBySlug"):
+    check(selectArticleBySlug("", viewerId = None))
+
+  test("selectArticleBySlug with viewer"):
+    check(selectArticleBySlug("", viewerId = Some(UserId(0))))
+
+  test("selectArticleIdBySlug"):
+    check(selectArticleIdBySlug(""))
+
+  test("insertComment"):
+    check(insertComment(ArticleId(0), UserId(0), "", Instant.EPOCH))
+
+  test("selectCommentById"):
+    check(selectCommentById(CommentId(0), "", viewerId = None))
+
+  test("selectCommentById with viewer"):
+    check(selectCommentById(CommentId(0), "", viewerId = Some(UserId(0))))
+
+  test("selectCommentsBySlug"):
+    check(selectCommentsBySlug("", viewerId = None))
+
+  test("selectCommentsBySlug with viewer"):
+    check(selectCommentsBySlug("", viewerId = Some(UserId(0))))
+
+  test("deleteComment"):
+    check(deleteComment(CommentId(0)))
