@@ -7,6 +7,10 @@ import com.example.realworld.db.Database
 import com.example.realworld.db.PostgresTestContainer
 import com.example.realworld.db.TestDatabaseConfig
 import com.example.realworld.model.ArticleResponse
+import com.example.realworld.model.CommentId
+import com.example.realworld.model.CommentResponse
+import com.example.realworld.model.MultipleArticlesResponse
+import com.example.realworld.model.MultipleCommentsResponse
 import com.example.realworld.model.ProfileResponse
 import com.example.realworld.model.TagsResponse
 import com.example.realworld.model.UserId
@@ -19,21 +23,20 @@ import com.example.realworld.service.ArticleService
 import com.example.realworld.service.CommentService
 import com.example.realworld.service.UserService
 import com.github.plokhotnyuk.jsoniter_scala.core.readFromString
-import fs2.Stream
 import munit.CatsEffectSuite
 import org.http4s.AuthScheme
 import org.http4s.Credentials
-import org.http4s.Headers
+import org.http4s.HttpApp
 import org.http4s.MediaType
 import org.http4s.Method
 import org.http4s.Request
 import org.http4s.Response
 import org.http4s.Status
+import org.http4s.Uri
 import org.http4s.headers.Authorization
 import org.http4s.headers.`Content-Type`
 import org.http4s.implicits.*
 
-import java.nio.charset.StandardCharsets
 import java.time.Instant
 import java.util.UUID
 
@@ -57,6 +60,25 @@ class HttpServerSpec extends CatsEffectSuite:
   )
 
   override def munitFixtures = List(httpAppFixture)
+
+  private def authHeader(token: String): Authorization =
+    Authorization(Credentials.Token(AuthScheme.Bearer, token))
+
+  private def registerUser(
+      httpApp: HttpApp[IO],
+      username: String,
+      email: String,
+      password: String
+  ): IO[(UserResponse, UserId)] =
+    val payload =
+      s"""{"user":{"username":"$username","email":"$email","password":"$password"}}"""
+    val request = Request[IO](Method.POST, uri"/api/users")
+      .withEntity(payload)
+      .withContentType(`Content-Type`(MediaType.application.json))
+    httpApp.run(request).flatMap { response =>
+      assertEquals(response.status, Status.Ok)
+      assertUserPayload(response, email, username)
+    }
 
   private def assertUserPayload(
       response: Response[IO],
@@ -98,7 +120,7 @@ class HttpServerSpec extends CatsEffectSuite:
       expectedTitle: String,
       expectedDescription: String,
       expectedBody: String,
-      expectedTags: List[String],
+      expectedTags: Set[String],
       expectedAuthorUsername: String,
       expectedFavorited: Boolean = false,
       expectedFavoritesCount: Int = 0,
@@ -112,7 +134,7 @@ class HttpServerSpec extends CatsEffectSuite:
       _ = assertEquals(article.title, expectedTitle)
       _ = assertEquals(article.description, expectedDescription)
       _ = assertEquals(article.body, expectedBody)
-      _ = assertEquals(article.tagList, expectedTags)
+      _ = assertEquals(article.tagList.toSet, expectedTags)
       _ = assertEquals(article.favorited, expectedFavorited)
       _ = assertEquals(article.favoritesCount, expectedFavoritesCount)
       _ = assert(!article.createdAt.isBefore(Instant.EPOCH), clue(article.createdAt))
@@ -121,6 +143,26 @@ class HttpServerSpec extends CatsEffectSuite:
       _ = assertEquals(article.author.following, expectedFollowing)
       _ = assertEquals(article.author.bio, None)
       _ = assertEquals(article.author.image, None)
+    yield decoded
+
+  private def assertCommentPayload(
+      response: Response[IO],
+      expectedBody: String,
+      expectedAuthorUsername: String,
+      expectedFollowing: Boolean = false
+  ): IO[CommentResponse] =
+    for
+      body <- response.as[String]
+      decoded = readFromString[CommentResponse](body)
+      comment = decoded.comment
+      _ = assertEquals(comment.body, expectedBody)
+      _ = assert(CommentId.value(comment.id) > 0, clue(comment.id))
+      _ = assert(!comment.createdAt.isBefore(Instant.EPOCH), clue(comment.createdAt))
+      _ = assert(!comment.updatedAt.isBefore(comment.createdAt), clue(comment.updatedAt))
+      _ = assertEquals(comment.author.username, expectedAuthorUsername)
+      _ = assertEquals(comment.author.following, expectedFollowing)
+      _ = assertEquals(comment.author.bio, None)
+      _ = assertEquals(comment.author.image, None)
     yield decoded
 
   test("liveness endpoint returns no content"):
@@ -134,12 +176,9 @@ class HttpServerSpec extends CatsEffectSuite:
     val httpApp = httpAppFixture()
     val payload =
       """{"user":{"username":"Jacob","email":"jake@jake.jake","password":"jakejake"}}"""
-    val request = Request[IO](
-      Method.POST,
-      uri"/api/users",
-      headers = Headers(`Content-Type`(MediaType.application.json)),
-      body = Stream.emits(payload.getBytes(StandardCharsets.UTF_8)).covary[IO]
-    )
+    val request = Request[IO](Method.POST, uri"/api/users")
+      .withEntity(payload)
+      .withContentType(`Content-Type`(MediaType.application.json))
 
     httpApp
       .run(request)
@@ -152,12 +191,9 @@ class HttpServerSpec extends CatsEffectSuite:
     val httpApp = httpAppFixture()
     val registerPayload =
       """{"user":{"username":"Jake","email":"jake@example.com","password":"jakepassword"}}"""
-    val registerRequest = Request[IO](
-      Method.POST,
-      uri"/api/users",
-      headers = Headers(`Content-Type`(MediaType.application.json)),
-      body = Stream.emits(registerPayload.getBytes(StandardCharsets.UTF_8)).covary[IO]
-    )
+    val registerRequest = Request[IO](Method.POST, uri"/api/users")
+      .withEntity(registerPayload)
+      .withContentType(`Content-Type`(MediaType.application.json))
 
     val articlePayload =
       """{"article":{"title":"How to train your dragon","description":"Ever wonder how?","body":"You have to believe","tagList":["reactjs","angularjs","dragons"]}}"""
@@ -169,15 +205,10 @@ class HttpServerSpec extends CatsEffectSuite:
         (registeredUserResponse, _) <-
           assertUserPayload(registerResponse, "jake@example.com", "Jake")
         token = registeredUserResponse.user.token
-        createRequest = Request[IO](
-          Method.POST,
-          uri"/api/articles",
-          headers = Headers(
-            Authorization(Credentials.Token(AuthScheme.Bearer, token)),
-            `Content-Type`(MediaType.application.json)
-          ),
-          body = Stream.emits(articlePayload.getBytes(StandardCharsets.UTF_8)).covary[IO]
-        )
+        createRequest = Request[IO](Method.POST, uri"/api/articles")
+          .putHeaders(authHeader(token))
+          .withEntity(articlePayload)
+          .withContentType(`Content-Type`(MediaType.application.json))
         createResponse <- httpApp.run(createRequest)
         _ = assertEquals(createResponse.status, Status.Created)
         articleResponse <-
@@ -187,7 +218,7 @@ class HttpServerSpec extends CatsEffectSuite:
             expectedTitle = "How to train your dragon",
             expectedDescription = "Ever wonder how?",
             expectedBody = "You have to believe",
-            expectedTags = List("reactjs", "angularjs", "dragons"),
+            expectedTags = Set("reactjs", "angularjs", "dragons"),
             expectedAuthorUsername = "Jake"
           )
         _ = assertEquals(articleResponse.article.author.username, "Jake")
@@ -199,12 +230,9 @@ class HttpServerSpec extends CatsEffectSuite:
     val httpApp = httpAppFixture()
     val registerPayload =
       """{"user":{"username":"Jessie","email":"jessie@example.com","password":"secretpass"}}"""
-    val registerRequest = Request[IO](
-      Method.POST,
-      uri"/api/users",
-      headers = Headers(`Content-Type`(MediaType.application.json)),
-      body = Stream.emits(registerPayload.getBytes(StandardCharsets.UTF_8)).covary[IO]
-    )
+    val registerRequest = Request[IO](Method.POST, uri"/api/users")
+      .withEntity(registerPayload)
+      .withContentType(`Content-Type`(MediaType.application.json))
 
     val articlePayload =
       """{"article":{"title":"Exploring Rust","description":"Borrow checker fun","body":"Rust is great","tagList":["rust","systems"]}}"""
@@ -216,15 +244,10 @@ class HttpServerSpec extends CatsEffectSuite:
         (registeredUserResponse, _) <-
           assertUserPayload(registerResponse, "jessie@example.com", "Jessie")
         token = registeredUserResponse.user.token
-        createRequest = Request[IO](
-          Method.POST,
-          uri"/api/articles",
-          headers = Headers(
-            Authorization(Credentials.Token(AuthScheme.Bearer, token)),
-            `Content-Type`(MediaType.application.json)
-          ),
-          body = Stream.emits(articlePayload.getBytes(StandardCharsets.UTF_8)).covary[IO]
-        )
+        createRequest = Request[IO](Method.POST, uri"/api/articles")
+          .putHeaders(authHeader(token))
+          .withEntity(articlePayload)
+          .withContentType(`Content-Type`(MediaType.application.json))
         createResponse <- httpApp.run(createRequest)
         _ = assertEquals(createResponse.status, Status.Created)
         createdArticle <-
@@ -234,7 +257,7 @@ class HttpServerSpec extends CatsEffectSuite:
             expectedTitle = "Exploring Rust",
             expectedDescription = "Borrow checker fun",
             expectedBody = "Rust is great",
-            expectedTags = List("rust", "systems"),
+            expectedTags = Set("rust", "systems"),
             expectedAuthorUsername = "Jessie"
           )
         getRequest = Request[IO](
@@ -250,9 +273,140 @@ class HttpServerSpec extends CatsEffectSuite:
             expectedTitle = "Exploring Rust",
             expectedDescription = "Borrow checker fun",
             expectedBody = "Rust is great",
-            expectedTags = List("rust", "systems"),
+            expectedTags = Set("rust", "systems"),
             expectedAuthorUsername = "Jessie"
           )
+      yield ()
+
+    result
+
+  test("list articles endpoint supports filters and pagination"):
+    val httpApp = httpAppFixture()
+
+    val firstArticlePayload =
+      """{"article":{"title":"Scala FP Basics","description":"Intro to FP","body":"Pure functions are great","tagList":["scala","fp"]}}"""
+    val secondArticlePayload =
+      """{"article":{"title":"Scala Streams","description":"Streaming with FS2","body":"Compositional streams","tagList":["scala","fs2"]}}"""
+    val thirdArticlePayload =
+      """{"article":{"title":"Rust Ownership","description":"Borrow checker 101","body":"Ownership rules","tagList":["rust"]}}"""
+
+    val result =
+      for
+        (authorOneResponse, _) <-
+          registerUser(httpApp, "WriterOne", "writer1@example.com", "password1")
+        (authorTwoResponse, _) <-
+          registerUser(httpApp, "WriterTwo", "writer2@example.com", "password2")
+        firstCreateResponse <-
+          httpApp.run(
+            Request[IO](Method.POST, uri"/api/articles")
+              .putHeaders(authHeader(authorOneResponse.user.token))
+              .withEntity(firstArticlePayload)
+              .withContentType(`Content-Type`(MediaType.application.json))
+          )
+        _ = assertEquals(firstCreateResponse.status, Status.Created)
+        firstArticle <-
+          assertArticlePayload(
+            firstCreateResponse,
+            expectedSlug = "scala-fp-basics",
+            expectedTitle = "Scala FP Basics",
+            expectedDescription = "Intro to FP",
+            expectedBody = "Pure functions are great",
+            expectedTags = Set("scala", "fp"),
+            expectedAuthorUsername = "WriterOne"
+          )
+        secondCreateResponse <-
+          httpApp.run(
+            Request[IO](Method.POST, uri"/api/articles")
+              .putHeaders(authHeader(authorOneResponse.user.token))
+              .withEntity(secondArticlePayload)
+              .withContentType(`Content-Type`(MediaType.application.json))
+          )
+        _ = assertEquals(secondCreateResponse.status, Status.Created)
+        secondArticle <-
+          assertArticlePayload(
+            secondCreateResponse,
+            expectedSlug = "scala-streams",
+            expectedTitle = "Scala Streams",
+            expectedDescription = "Streaming with FS2",
+            expectedBody = "Compositional streams",
+            expectedTags = Set("scala", "fs2"),
+            expectedAuthorUsername = "WriterOne"
+          )
+        thirdCreateResponse <-
+          httpApp.run(
+            Request[IO](Method.POST, uri"/api/articles")
+              .putHeaders(authHeader(authorTwoResponse.user.token))
+              .withEntity(thirdArticlePayload)
+              .withContentType(`Content-Type`(MediaType.application.json))
+          )
+        _ = assertEquals(thirdCreateResponse.status, Status.Created)
+        thirdArticle <-
+          assertArticlePayload(
+            thirdCreateResponse,
+            expectedSlug = "rust-ownership",
+            expectedTitle = "Rust Ownership",
+            expectedDescription = "Borrow checker 101",
+            expectedBody = "Ownership rules",
+            expectedTags = Set("rust"),
+            expectedAuthorUsername = "WriterTwo"
+          )
+        (fanResponse, _) <- registerUser(httpApp, "ArticleFan", "fan@example.com", "fanpass")
+        favoriteRequest = Request[IO](
+          Method.POST,
+          uri"/api/articles" / firstArticle.article.slug / "favorite"
+        ).putHeaders(authHeader(fanResponse.user.token))
+        favoriteResponse <- httpApp.run(favoriteRequest)
+        _ = assertEquals(favoriteResponse.status, Status.Ok)
+        _ <-
+          assertArticlePayload(
+            favoriteResponse,
+            expectedSlug = firstArticle.article.slug,
+            expectedTitle = firstArticle.article.title,
+            expectedDescription = firstArticle.article.description,
+            expectedBody = firstArticle.article.body,
+            expectedTags = firstArticle.article.tagList.toSet,
+            expectedAuthorUsername = "WriterOne",
+            expectedFavorited = true,
+            expectedFavoritesCount = 1
+          )
+        listByTagResponse <- httpApp.run(
+          Request[IO](Method.GET, uri"/api/articles?tag=scala&limit=1")
+        )
+        _ = assertEquals(listByTagResponse.status, Status.Ok)
+        listByTag <- listByTagResponse.as[String].map(readFromString[MultipleArticlesResponse](_))
+        _ = assertEquals(listByTag.articlesCount, 2)
+        _ = assertEquals(listByTag.articles.map(_.slug), List(secondArticle.article.slug))
+        listByTagPage2Response <-
+          httpApp.run(Request[IO](Method.GET, uri"/api/articles?tag=scala&limit=1&offset=1"))
+        _ = assertEquals(listByTagPage2Response.status, Status.Ok)
+        listByTagPage2 <- listByTagPage2Response
+          .as[String]
+          .map(readFromString[MultipleArticlesResponse](_))
+        _ = assertEquals(listByTagPage2.articlesCount, 2)
+        _ = assertEquals(listByTagPage2.articles.map(_.slug), List(firstArticle.article.slug))
+        listByAuthorResponse <- httpApp.run(
+          Request[IO](Method.GET, uri"/api/articles?author=WriterTwo")
+        )
+        _ = assertEquals(listByAuthorResponse.status, Status.Ok)
+        listByAuthor <- listByAuthorResponse
+          .as[String]
+          .map(readFromString[MultipleArticlesResponse](_))
+        _ = assertEquals(listByAuthor.articlesCount, 1)
+        _ = assertEquals(listByAuthor.articles.map(_.slug), List(thirdArticle.article.slug))
+        favoritedResponse <-
+          httpApp.run(
+            Request[IO](
+              Method.GET,
+              uri"/api/articles?favorited=ArticleFan"
+            ).putHeaders(authHeader(fanResponse.user.token))
+          )
+        _ = assertEquals(favoritedResponse.status, Status.Ok)
+        favorited <- favoritedResponse.as[String].map(readFromString[MultipleArticlesResponse](_))
+        _ = assertEquals(favorited.articlesCount, 1)
+        favoritedArticle = favorited.articles.head
+        _ = assertEquals(favoritedArticle.slug, firstArticle.article.slug)
+        _ = assertEquals(favoritedArticle.favorited, true)
+        _ = assertEquals(favoritedArticle.favoritesCount, 1)
       yield ()
 
     result
@@ -261,12 +415,9 @@ class HttpServerSpec extends CatsEffectSuite:
     val httpApp = httpAppFixture()
     val registerPayload =
       """{"user":{"username":"TagCollector","email":"tagger@example.com","password":"secretpass"}}"""
-    val registerRequest = Request[IO](
-      Method.POST,
-      uri"/api/users",
-      headers = Headers(`Content-Type`(MediaType.application.json)),
-      body = Stream.emits(registerPayload.getBytes(StandardCharsets.UTF_8)).covary[IO]
-    )
+    val registerRequest = Request[IO](Method.POST, uri"/api/users")
+      .withEntity(registerPayload)
+      .withContentType(`Content-Type`(MediaType.application.json))
 
     val firstArticlePayload =
       """{"article":{"title":"Tech trends","description":"Latest trends","body":"Stay curious","tagList":["reactjs","angularjs"]}}"""
@@ -284,26 +435,16 @@ class HttpServerSpec extends CatsEffectSuite:
           "TagCollector"
         )
         token = userResponse.user.token
-        firstCreateRequest = Request[IO](
-          Method.POST,
-          uri"/api/articles",
-          headers = Headers(
-            Authorization(Credentials.Token(AuthScheme.Bearer, token)),
-            `Content-Type`(MediaType.application.json)
-          ),
-          body = Stream.emits(firstArticlePayload.getBytes(StandardCharsets.UTF_8)).covary[IO]
-        )
+        firstCreateRequest = Request[IO](Method.POST, uri"/api/articles")
+          .putHeaders(authHeader(token))
+          .withEntity(firstArticlePayload)
+          .withContentType(`Content-Type`(MediaType.application.json))
         firstCreateResponse <- httpApp.run(firstCreateRequest)
         _ = assertEquals(firstCreateResponse.status, Status.Created)
-        secondCreateRequest = Request[IO](
-          Method.POST,
-          uri"/api/articles",
-          headers = Headers(
-            Authorization(Credentials.Token(AuthScheme.Bearer, token)),
-            `Content-Type`(MediaType.application.json)
-          ),
-          body = Stream.emits(secondArticlePayload.getBytes(StandardCharsets.UTF_8)).covary[IO]
-        )
+        secondCreateRequest = Request[IO](Method.POST, uri"/api/articles")
+          .putHeaders(authHeader(token))
+          .withEntity(secondArticlePayload)
+          .withContentType(`Content-Type`(MediaType.application.json))
         secondCreateResponse <- httpApp.run(secondCreateRequest)
         _ = assertEquals(secondCreateResponse.status, Status.Created)
         tagsRequest = Request[IO](Method.GET, uri"/api/tags")
@@ -322,12 +463,9 @@ class HttpServerSpec extends CatsEffectSuite:
     val httpApp = httpAppFixture()
     val registerPayload =
       """{"user":{"username":"Author","email":"author@example.com","password":"secretpass"}}"""
-    val registerRequest = Request[IO](
-      Method.POST,
-      uri"/api/users",
-      headers = Headers(`Content-Type`(MediaType.application.json)),
-      body = Stream.emits(registerPayload.getBytes(StandardCharsets.UTF_8)).covary[IO]
-    )
+    val registerRequest = Request[IO](Method.POST, uri"/api/users")
+      .withEntity(registerPayload)
+      .withContentType(`Content-Type`(MediaType.application.json))
 
     val createPayload =
       """{"article":{"title":"Training dragons","description":"A guide","body":"Believe in yourself","tagList":["dragons"]}}"""
@@ -341,15 +479,10 @@ class HttpServerSpec extends CatsEffectSuite:
         _ = assertEquals(registerResponse.status, Status.Ok)
         (userResponse, _) <- assertUserPayload(registerResponse, "author@example.com", "Author")
         token = userResponse.user.token
-        createRequest = Request[IO](
-          Method.POST,
-          uri"/api/articles",
-          headers = Headers(
-            Authorization(Credentials.Token(AuthScheme.Bearer, token)),
-            `Content-Type`(MediaType.application.json)
-          ),
-          body = Stream.emits(createPayload.getBytes(StandardCharsets.UTF_8)).covary[IO]
-        )
+        createRequest = Request[IO](Method.POST, uri"/api/articles")
+          .putHeaders(authHeader(token))
+          .withEntity(createPayload)
+          .withContentType(`Content-Type`(MediaType.application.json))
         createResponse <- httpApp.run(createRequest)
         _ = assertEquals(createResponse.status, Status.Created)
         createdArticle <-
@@ -359,18 +492,13 @@ class HttpServerSpec extends CatsEffectSuite:
             expectedTitle = "Training dragons",
             expectedDescription = "A guide",
             expectedBody = "Believe in yourself",
-            expectedTags = List("dragons"),
+            expectedTags = Set("dragons"),
             expectedAuthorUsername = "Author"
           )
-        updateRequest = Request[IO](
-          Method.PUT,
-          uri"/api/articles" / createdArticle.article.slug,
-          headers = Headers(
-            Authorization(Credentials.Token(AuthScheme.Bearer, token)),
-            `Content-Type`(MediaType.application.json)
-          ),
-          body = Stream.emits(updatePayload.getBytes(StandardCharsets.UTF_8)).covary[IO]
-        )
+        updateRequest = Request[IO](Method.PUT, uri"/api/articles" / createdArticle.article.slug)
+          .putHeaders(authHeader(token))
+          .withEntity(updatePayload)
+          .withContentType(`Content-Type`(MediaType.application.json))
         updateResponse <- httpApp.run(updateRequest)
         _ = assertEquals(updateResponse.status, Status.Ok)
         updatedArticle <-
@@ -380,7 +508,7 @@ class HttpServerSpec extends CatsEffectSuite:
             expectedTitle = "Did you train your dragon?",
             expectedDescription = "A guide",
             expectedBody = "Believe in yourself",
-            expectedTags = List("dragons"),
+            expectedTags = Set("dragons"),
             expectedAuthorUsername = "Author"
           )
         _ = assert(!updatedArticle.article.updatedAt.isBefore(createdArticle.article.updatedAt))
@@ -394,7 +522,7 @@ class HttpServerSpec extends CatsEffectSuite:
             expectedTitle = "Did you train your dragon?",
             expectedDescription = "A guide",
             expectedBody = "Believe in yourself",
-            expectedTags = List("dragons"),
+            expectedTags = Set("dragons"),
             expectedAuthorUsername = "Author"
           )
       yield ()
@@ -405,12 +533,9 @@ class HttpServerSpec extends CatsEffectSuite:
     val httpApp = httpAppFixture()
     val registerPayload =
       """{"user":{"username":"Remover","email":"remover@example.com","password":"secretpass"}}"""
-    val registerRequest = Request[IO](
-      Method.POST,
-      uri"/api/users",
-      headers = Headers(`Content-Type`(MediaType.application.json)),
-      body = Stream.emits(registerPayload.getBytes(StandardCharsets.UTF_8)).covary[IO]
-    )
+    val registerRequest = Request[IO](Method.POST, uri"/api/users")
+      .withEntity(registerPayload)
+      .withContentType(`Content-Type`(MediaType.application.json))
 
     val createPayload =
       """{"article":{"title":"Disposable article","description":"Temporary","body":"To be deleted","tagList":["temp"]}}"""
@@ -421,15 +546,10 @@ class HttpServerSpec extends CatsEffectSuite:
         _ = assertEquals(registerResponse.status, Status.Ok)
         (userResponse, _) <- assertUserPayload(registerResponse, "remover@example.com", "Remover")
         token = userResponse.user.token
-        createRequest = Request[IO](
-          Method.POST,
-          uri"/api/articles",
-          headers = Headers(
-            Authorization(Credentials.Token(AuthScheme.Bearer, token)),
-            `Content-Type`(MediaType.application.json)
-          ),
-          body = Stream.emits(createPayload.getBytes(StandardCharsets.UTF_8)).covary[IO]
-        )
+        createRequest = Request[IO](Method.POST, uri"/api/articles")
+          .putHeaders(authHeader(token))
+          .withEntity(createPayload)
+          .withContentType(`Content-Type`(MediaType.application.json))
         createResponse <- httpApp.run(createRequest)
         _ = assertEquals(createResponse.status, Status.Created)
         createdArticle <-
@@ -439,14 +559,13 @@ class HttpServerSpec extends CatsEffectSuite:
             expectedTitle = "Disposable article",
             expectedDescription = "Temporary",
             expectedBody = "To be deleted",
-            expectedTags = List("temp"),
+            expectedTags = Set("temp"),
             expectedAuthorUsername = "Remover"
           )
         deleteRequest = Request[IO](
           Method.DELETE,
-          uri"/api/articles" / createdArticle.article.slug,
-          headers = Headers(Authorization(Credentials.Token(AuthScheme.Bearer, token)))
-        )
+          uri"/api/articles" / createdArticle.article.slug
+        ).putHeaders(authHeader(token))
         deleteResponse <- httpApp.run(deleteRequest)
         _ = assertEquals(deleteResponse.status, Status.NoContent)
         getRequest = Request[IO](Method.GET, uri"/api/articles" / createdArticle.article.slug)
@@ -465,21 +584,13 @@ class HttpServerSpec extends CatsEffectSuite:
     val articlePayload =
       """{"article":{"title":"Favorite me","description":"Please do","body":"Pretty please","tagList":["tag"]}}"""
 
-    val authorRequest = Request[IO](
-      Method.POST,
-      uri"/api/users",
-      headers = Headers(`Content-Type`(MediaType.application.json)),
-      body = Stream.emits(authorPayload.getBytes(StandardCharsets.UTF_8)).covary[IO]
-    )
+    val authorRequest = Request[IO](Method.POST, uri"/api/users")
+      .withEntity(authorPayload)
+      .withContentType(`Content-Type`(MediaType.application.json))
 
-    val readerRequest = Request[IO](
-      Method.POST,
-      uri"/api/users",
-      headers = Headers(`Content-Type`(MediaType.application.json)),
-      body = Stream.emits(readerPayload.getBytes(StandardCharsets.UTF_8)).covary[IO]
-    )
-
-    val createBody = Stream.emits(articlePayload.getBytes(StandardCharsets.UTF_8)).covary[IO]
+    val readerRequest = Request[IO](Method.POST, uri"/api/users")
+      .withEntity(readerPayload)
+      .withContentType(`Content-Type`(MediaType.application.json))
 
     val result =
       for
@@ -488,15 +599,10 @@ class HttpServerSpec extends CatsEffectSuite:
         (authorUserResponse, _) <-
           assertUserPayload(authorResponse, "author-fav@example.com", "FavAuthor")
         authorToken = authorUserResponse.user.token
-        createRequest = Request[IO](
-          Method.POST,
-          uri"/api/articles",
-          headers = Headers(
-            Authorization(Credentials.Token(AuthScheme.Bearer, authorToken)),
-            `Content-Type`(MediaType.application.json)
-          ),
-          body = createBody
-        )
+        createRequest = Request[IO](Method.POST, uri"/api/articles")
+          .putHeaders(authHeader(authorToken))
+          .withEntity(articlePayload)
+          .withContentType(`Content-Type`(MediaType.application.json))
         createResponse <- httpApp.run(createRequest)
         _ = assertEquals(createResponse.status, Status.Created)
         createdArticle <-
@@ -506,7 +612,7 @@ class HttpServerSpec extends CatsEffectSuite:
             expectedTitle = "Favorite me",
             expectedDescription = "Please do",
             expectedBody = "Pretty please",
-            expectedTags = List("tag"),
+            expectedTags = Set("tag"),
             expectedAuthorUsername = "FavAuthor"
           )
         readerResponse <- httpApp.run(readerRequest)
@@ -516,9 +622,8 @@ class HttpServerSpec extends CatsEffectSuite:
         readerToken = readerUserResponse.user.token
         favoriteRequest = Request[IO](
           Method.POST,
-          uri"/api/articles" / createdArticle.article.slug / "favorite",
-          headers = Headers(Authorization(Credentials.Token(AuthScheme.Bearer, readerToken)))
-        )
+          uri"/api/articles" / createdArticle.article.slug / "favorite"
+        ).putHeaders(authHeader(readerToken))
         favoriteResponse <- httpApp.run(favoriteRequest)
         _ = assertEquals(favoriteResponse.status, Status.Ok)
         _ <-
@@ -528,16 +633,15 @@ class HttpServerSpec extends CatsEffectSuite:
             expectedTitle = "Favorite me",
             expectedDescription = "Please do",
             expectedBody = "Pretty please",
-            expectedTags = List("tag"),
+            expectedTags = Set("tag"),
             expectedAuthorUsername = "FavAuthor",
             expectedFavorited = true,
             expectedFavoritesCount = 1
           )
         getFavoritedRequest = Request[IO](
           Method.GET,
-          uri"/api/articles" / createdArticle.article.slug,
-          headers = Headers(Authorization(Credentials.Token(AuthScheme.Bearer, readerToken)))
-        )
+          uri"/api/articles" / createdArticle.article.slug
+        ).putHeaders(authHeader(readerToken))
         getFavoritedResponse <- httpApp.run(getFavoritedRequest)
         _ = assertEquals(getFavoritedResponse.status, Status.Ok)
         _ <-
@@ -547,16 +651,15 @@ class HttpServerSpec extends CatsEffectSuite:
             expectedTitle = "Favorite me",
             expectedDescription = "Please do",
             expectedBody = "Pretty please",
-            expectedTags = List("tag"),
+            expectedTags = Set("tag"),
             expectedAuthorUsername = "FavAuthor",
             expectedFavorited = true,
             expectedFavoritesCount = 1
           )
         unfavoriteRequest = Request[IO](
           Method.DELETE,
-          uri"/api/articles" / createdArticle.article.slug / "favorite",
-          headers = Headers(Authorization(Credentials.Token(AuthScheme.Bearer, readerToken)))
-        )
+          uri"/api/articles" / createdArticle.article.slug / "favorite"
+        ).putHeaders(authHeader(readerToken))
         unfavoriteResponse <- httpApp.run(unfavoriteRequest)
         _ = assertEquals(unfavoriteResponse.status, Status.Ok)
         _ <-
@@ -566,7 +669,7 @@ class HttpServerSpec extends CatsEffectSuite:
             expectedTitle = "Favorite me",
             expectedDescription = "Please do",
             expectedBody = "Pretty please",
-            expectedTags = List("tag"),
+            expectedTags = Set("tag"),
             expectedAuthorUsername = "FavAuthor",
             expectedFavorited = false,
             expectedFavoritesCount = 0
@@ -575,16 +678,240 @@ class HttpServerSpec extends CatsEffectSuite:
 
     result
 
+  test("feed endpoint returns only articles from followed users in reverse chronological order"):
+    val httpApp = httpAppFixture()
+
+    val firstFollowedPayload =
+      """{"article":{"title":"Followed article","description":"Latest news","body":"Hot off the press","tagList":["news"]}}"""
+    val secondFollowedPayload =
+      """{"article":{"title":"Another followed story","description":"Breaking","body":"More updates","tagList":["updates"]}}"""
+    val otherPayload =
+      """{"article":{"title":"Unfollowed post","description":"Should not show","body":"Hidden","tagList":["misc"]}}"""
+
+    val result =
+      for
+        (followerResponse, _) <-
+          registerUser(httpApp, "FeedReader", "feed.reader@example.com", "secret")
+        (followedResponse, _) <-
+          registerUser(httpApp, "FeedAuthor", "feed.author@example.com", "secret")
+        (otherAuthorResponse, _) <-
+          registerUser(httpApp, "OtherAuthor", "other.author@example.com", "secret")
+        firstFollowedResponse <-
+          httpApp.run(
+            Request[IO](Method.POST, uri"/api/articles")
+              .putHeaders(authHeader(followedResponse.user.token))
+              .withEntity(firstFollowedPayload)
+              .withContentType(`Content-Type`(MediaType.application.json))
+          )
+        _ = assertEquals(firstFollowedResponse.status, Status.Created)
+        firstFollowedArticle <-
+          assertArticlePayload(
+            firstFollowedResponse,
+            expectedSlug = "followed-article",
+            expectedTitle = "Followed article",
+            expectedDescription = "Latest news",
+            expectedBody = "Hot off the press",
+            expectedTags = Set("news"),
+            expectedAuthorUsername = "FeedAuthor"
+          )
+        secondFollowedResponse <-
+          httpApp.run(
+            Request[IO](Method.POST, uri"/api/articles")
+              .putHeaders(authHeader(followedResponse.user.token))
+              .withEntity(secondFollowedPayload)
+              .withContentType(`Content-Type`(MediaType.application.json))
+          )
+        _ = assertEquals(secondFollowedResponse.status, Status.Created)
+        secondFollowedArticle <-
+          assertArticlePayload(
+            secondFollowedResponse,
+            expectedSlug = "another-followed-story",
+            expectedTitle = "Another followed story",
+            expectedDescription = "Breaking",
+            expectedBody = "More updates",
+            expectedTags = Set("updates"),
+            expectedAuthorUsername = "FeedAuthor"
+          )
+        otherArticleResponse <-
+          httpApp.run(
+            Request[IO](Method.POST, uri"/api/articles")
+              .putHeaders(authHeader(otherAuthorResponse.user.token))
+              .withEntity(otherPayload)
+              .withContentType(`Content-Type`(MediaType.application.json))
+          )
+        _ = assertEquals(otherArticleResponse.status, Status.Created)
+        otherArticle <- assertArticlePayload(
+          otherArticleResponse,
+          expectedSlug = "unfollowed-post",
+          expectedTitle = "Unfollowed post",
+          expectedDescription = "Should not show",
+          expectedBody = "Hidden",
+          expectedTags = Set("misc"),
+          expectedAuthorUsername = "OtherAuthor"
+        )
+        initialFeedRequest = Request[IO](
+          Method.GET,
+          uri"/api/articles/feed"
+        ).putHeaders(authHeader(followerResponse.user.token))
+        initialFeedResponse <- httpApp.run(initialFeedRequest)
+        _ = assertEquals(initialFeedResponse.status, Status.Ok)
+        initialFeed <- initialFeedResponse
+          .as[String]
+          .map(readFromString[MultipleArticlesResponse](_))
+        _ = assertEquals(initialFeed.articlesCount, 0)
+        _ = assertEquals(initialFeed.articles, Nil)
+        followResponse <-
+          httpApp.run(
+            Request[IO](
+              Method.POST,
+              uri"/api/profiles/FeedAuthor/follow"
+            ).putHeaders(authHeader(followerResponse.user.token))
+          )
+        _ = assertEquals(followResponse.status, Status.Ok)
+        feedPage1Response <- httpApp.run(
+          Request[IO](
+            Method.GET,
+            uri"/api/articles/feed?limit=1"
+          ).putHeaders(authHeader(followerResponse.user.token))
+        )
+        _ = assertEquals(feedPage1Response.status, Status.Ok)
+        feedPage1 <- feedPage1Response.as[String].map(readFromString[MultipleArticlesResponse](_))
+        _ = assertEquals(feedPage1.articlesCount, 2)
+        _ = assertEquals(feedPage1.articles.map(_.slug), List(secondFollowedArticle.article.slug))
+        _ = assert(feedPage1.articles.forall(_.author.following))
+        feedPage2Response <-
+          httpApp.run(
+            Request[IO](
+              Method.GET,
+              uri"/api/articles/feed?limit=1&offset=1"
+            ).putHeaders(authHeader(followerResponse.user.token))
+          )
+        _ = assertEquals(feedPage2Response.status, Status.Ok)
+        feedPage2 <- feedPage2Response.as[String].map(readFromString[MultipleArticlesResponse](_))
+        _ = assertEquals(feedPage2.articlesCount, 2)
+        _ = assertEquals(feedPage2.articles.map(_.slug), List(firstFollowedArticle.article.slug))
+        _ = assert(feedPage2.articles.forall(_.author.following))
+        _ = assert(!feedPage2.articles.exists(_.slug == otherArticle.article.slug))
+      yield ()
+
+    result
+
+  test("comments endpoints allow creating, listing, and deleting comments"):
+    val httpApp = httpAppFixture()
+    val articlePayload =
+      """{"article":{"title":"Article with comments","description":"Comment playground","body":"Test comments","tagList":["discussion"]}}"""
+    val firstCommentPayload = """{"comment":{"body":"Nice writeup"}}"""
+    val secondCommentPayload = """{"comment":{"body":"Thanks for sharing"}}"""
+
+    val result =
+      for
+        (authorResponse, _) <-
+          registerUser(httpApp, "CommentAuthor", "comment.author@example.com", "secret")
+        createArticleResponse <-
+          httpApp.run(
+            Request[IO](Method.POST, uri"/api/articles")
+              .putHeaders(authHeader(authorResponse.user.token))
+              .withEntity(articlePayload)
+              .withContentType(`Content-Type`(MediaType.application.json))
+          )
+        _ = assertEquals(createArticleResponse.status, Status.Created)
+        createdArticle <-
+          assertArticlePayload(
+            createArticleResponse,
+            expectedSlug = "article-with-comments",
+            expectedTitle = "Article with comments",
+            expectedDescription = "Comment playground",
+            expectedBody = "Test comments",
+            expectedTags = Set("discussion"),
+            expectedAuthorUsername = "CommentAuthor"
+          )
+        (commenterResponse, _) <-
+          registerUser(httpApp, "Commenter", "commenter@example.com", "secret")
+        firstCommentResponse <-
+          httpApp.run(
+            Request[IO](Method.POST, uri"/api/articles" / createdArticle.article.slug / "comments")
+              .putHeaders(authHeader(commenterResponse.user.token))
+              .withEntity(firstCommentPayload)
+              .withContentType(`Content-Type`(MediaType.application.json))
+          )
+        _ = assertEquals(firstCommentResponse.status, Status.Ok)
+        firstComment <- assertCommentPayload(firstCommentResponse, "Nice writeup", "Commenter")
+        secondCommentResponse <-
+          httpApp.run(
+            Request[IO](Method.POST, uri"/api/articles" / createdArticle.article.slug / "comments")
+              .putHeaders(authHeader(commenterResponse.user.token))
+              .withEntity(secondCommentPayload)
+              .withContentType(`Content-Type`(MediaType.application.json))
+          )
+        _ = assertEquals(secondCommentResponse.status, Status.Ok)
+        secondComment <- assertCommentPayload(
+          secondCommentResponse,
+          "Thanks for sharing",
+          "Commenter"
+        )
+        anonymousListResponse <-
+          httpApp.run(
+            Request[IO](Method.GET, uri"/api/articles" / createdArticle.article.slug / "comments")
+          )
+        _ = assertEquals(anonymousListResponse.status, Status.Ok)
+        anonymousComments <- anonymousListResponse
+          .as[String]
+          .map(readFromString[MultipleCommentsResponse](_))
+        _ = assertEquals(
+          anonymousComments.comments.map(_.id),
+          List(secondComment.comment.id, firstComment.comment.id)
+        )
+        _ = assert(anonymousComments.comments.forall(!_.author.following))
+        (readerResponse, _) <-
+          registerUser(httpApp, "CommentReader", "comment.reader@example.com", "secret")
+        followResponse <-
+          httpApp.run(
+            Request[IO](
+              Method.POST,
+              uri"/api/profiles/Commenter/follow"
+            ).putHeaders(authHeader(readerResponse.user.token))
+          )
+        _ = assertEquals(followResponse.status, Status.Ok)
+        authedListResponse <-
+          httpApp.run(
+            Request[IO](
+              Method.GET,
+              uri"/api/articles" / createdArticle.article.slug / "comments"
+            ).putHeaders(authHeader(readerResponse.user.token))
+          )
+        _ = assertEquals(authedListResponse.status, Status.Ok)
+        authedComments <- authedListResponse
+          .as[String]
+          .map(readFromString[MultipleCommentsResponse](_))
+        _ = assert(authedComments.comments.forall(_.author.following))
+        deleteFirstCommentRequest = Request[IO](
+          Method.DELETE,
+          uri"/api/articles" / createdArticle.article.slug / "comments" / CommentId
+            .value(firstComment.comment.id)
+            .toString
+        ).putHeaders(authHeader(commenterResponse.user.token))
+        deleteFirstCommentResponse <- httpApp.run(deleteFirstCommentRequest)
+        _ = assertEquals(deleteFirstCommentResponse.status, Status.NoContent)
+        afterDeleteResponse <-
+          httpApp.run(
+            Request[IO](Method.GET, uri"/api/articles" / createdArticle.article.slug / "comments")
+          )
+        _ = assertEquals(afterDeleteResponse.status, Status.Ok)
+        afterDelete <- afterDeleteResponse
+          .as[String]
+          .map(readFromString[MultipleCommentsResponse](_))
+        _ = assertEquals(afterDelete.comments.map(_.id), List(secondComment.comment.id))
+      yield ()
+
+    result
+
   test("profile endpoint returns user profile without authentication"):
     val httpApp = httpAppFixture()
     val registerPayload =
       """{"user":{"username":"Mallory","email":"mallory@example.com","password":"password"}}"""
-    val registerRequest = Request[IO](
-      Method.POST,
-      uri"/api/users",
-      headers = Headers(`Content-Type`(MediaType.application.json)),
-      body = Stream.emits(registerPayload.getBytes(StandardCharsets.UTF_8)).covary[IO]
-    )
+    val registerRequest = Request[IO](Method.POST, uri"/api/users")
+      .withEntity(registerPayload)
+      .withContentType(`Content-Type`(MediaType.application.json))
 
     val result =
       for
@@ -606,19 +933,13 @@ class HttpServerSpec extends CatsEffectSuite:
     val followeePayload =
       """{"user":{"username":"Leader","email":"leader@example.com","password":"secret"}}"""
 
-    val followerRequest = Request[IO](
-      Method.POST,
-      uri"/api/users",
-      headers = Headers(`Content-Type`(MediaType.application.json)),
-      body = Stream.emits(followerPayload.getBytes(StandardCharsets.UTF_8)).covary[IO]
-    )
+    val followerRequest = Request[IO](Method.POST, uri"/api/users")
+      .withEntity(followerPayload)
+      .withContentType(`Content-Type`(MediaType.application.json))
 
-    val followeeRequest = Request[IO](
-      Method.POST,
-      uri"/api/users",
-      headers = Headers(`Content-Type`(MediaType.application.json)),
-      body = Stream.emits(followeePayload.getBytes(StandardCharsets.UTF_8)).covary[IO]
-    )
+    val followeeRequest = Request[IO](Method.POST, uri"/api/users")
+      .withEntity(followeePayload)
+      .withContentType(`Content-Type`(MediaType.application.json))
 
     val result =
       for
@@ -629,11 +950,9 @@ class HttpServerSpec extends CatsEffectSuite:
         followeeResponse <- httpApp.run(followeeRequest)
         _ = assertEquals(followeeResponse.status, Status.Ok)
         _ <- assertUserPayload(followeeResponse, "leader@example.com", "Leader")
-        authHeaders = Headers(
-          Authorization(Credentials.Token(AuthScheme.Bearer, followerUserResponse.user.token))
-        )
+        authHdr = authHeader(followerUserResponse.user.token)
         preFollowResponse <-
-          httpApp.run(Request[IO](Method.GET, uri"/api/profiles/Leader", headers = authHeaders))
+          httpApp.run(Request[IO](Method.GET, uri"/api/profiles/Leader").putHeaders(authHdr))
         _ = assertEquals(preFollowResponse.status, Status.Ok)
         _ <- assertProfilePayload(
           preFollowResponse,
@@ -644,7 +963,7 @@ class HttpServerSpec extends CatsEffectSuite:
         )
         followResponse <-
           httpApp.run(
-            Request[IO](Method.POST, uri"/api/profiles/Leader/follow", headers = authHeaders)
+            Request[IO](Method.POST, uri"/api/profiles/Leader/follow").putHeaders(authHdr)
           )
         _ = assertEquals(followResponse.status, Status.Ok)
         _ <- assertProfilePayload(
@@ -655,7 +974,7 @@ class HttpServerSpec extends CatsEffectSuite:
           expectedFollowing = true
         )
         postFollowResponse <-
-          httpApp.run(Request[IO](Method.GET, uri"/api/profiles/Leader", headers = authHeaders))
+          httpApp.run(Request[IO](Method.GET, uri"/api/profiles/Leader").putHeaders(authHdr))
         _ = assertEquals(postFollowResponse.status, Status.Ok)
         _ <- assertProfilePayload(
           postFollowResponse,
@@ -666,7 +985,7 @@ class HttpServerSpec extends CatsEffectSuite:
         )
         unfollowResponse <-
           httpApp.run(
-            Request[IO](Method.DELETE, uri"/api/profiles/Leader/follow", headers = authHeaders)
+            Request[IO](Method.DELETE, uri"/api/profiles/Leader/follow").putHeaders(authHdr)
           )
         _ = assertEquals(unfollowResponse.status, Status.Ok)
         _ <- assertProfilePayload(
@@ -677,7 +996,7 @@ class HttpServerSpec extends CatsEffectSuite:
           expectedFollowing = false
         )
         postUnfollowResponse <-
-          httpApp.run(Request[IO](Method.GET, uri"/api/profiles/Leader", headers = authHeaders))
+          httpApp.run(Request[IO](Method.GET, uri"/api/profiles/Leader").putHeaders(authHdr))
         _ = assertEquals(postUnfollowResponse.status, Status.Ok)
         _ <- assertProfilePayload(
           postUnfollowResponse,
@@ -697,19 +1016,13 @@ class HttpServerSpec extends CatsEffectSuite:
     val loginPayload =
       """{"user":{"email":"alice@example.com","password":"wonderland"}}"""
 
-    val registerRequest = Request[IO](
-      Method.POST,
-      uri"/api/users",
-      headers = Headers(`Content-Type`(MediaType.application.json)),
-      body = Stream.emits(registerPayload.getBytes(StandardCharsets.UTF_8)).covary[IO]
-    )
+    val registerRequest = Request[IO](Method.POST, uri"/api/users")
+      .withEntity(registerPayload)
+      .withContentType(`Content-Type`(MediaType.application.json))
 
-    val loginRequest = Request[IO](
-      Method.POST,
-      uri"/api/users/login",
-      headers = Headers(`Content-Type`(MediaType.application.json)),
-      body = Stream.emits(loginPayload.getBytes(StandardCharsets.UTF_8)).covary[IO]
-    )
+    val loginRequest = Request[IO](Method.POST, uri"/api/users/login")
+      .withEntity(loginPayload)
+      .withContentType(`Content-Type`(MediaType.application.json))
 
     httpApp
       .run(registerRequest)
@@ -733,12 +1046,9 @@ class HttpServerSpec extends CatsEffectSuite:
     val registerPayload =
       """{"user":{"username":"Carol","email":"carol@example.com","password":"secret"}}"""
 
-    val registerRequest = Request[IO](
-      Method.POST,
-      uri"/api/users",
-      headers = Headers(`Content-Type`(MediaType.application.json)),
-      body = Stream.emits(registerPayload.getBytes(StandardCharsets.UTF_8)).covary[IO]
-    )
+    val registerRequest = Request[IO](Method.POST, uri"/api/users")
+      .withEntity(registerPayload)
+      .withContentType(`Content-Type`(MediaType.application.json))
 
     httpApp
       .run(registerRequest)
@@ -748,11 +1058,8 @@ class HttpServerSpec extends CatsEffectSuite:
       }
       .flatMap { case (registeredUserResponse, registeredUserId) =>
         val token = registeredUserResponse.user.token
-        val currentUserRequest = Request[IO](
-          Method.GET,
-          uri"/api/user",
-          headers = Headers(Authorization(Credentials.Token(AuthScheme.Bearer, token)))
-        )
+        val currentUserRequest = Request[IO](Method.GET, uri"/api/user")
+          .putHeaders(authHeader(token))
 
         httpApp
           .run(currentUserRequest)
@@ -777,12 +1084,9 @@ class HttpServerSpec extends CatsEffectSuite:
     val expectedBio = Some("Updated bio")
     val expectedImage = Some("https://example.com/avatar.png")
 
-    val registerRequest = Request[IO](
-      Method.POST,
-      uri"/api/users",
-      headers = Headers(`Content-Type`(MediaType.application.json)),
-      body = Stream.emits(registerPayload.getBytes(StandardCharsets.UTF_8)).covary[IO]
-    )
+    val registerRequest = Request[IO](Method.POST, uri"/api/users")
+      .withEntity(registerPayload)
+      .withContentType(`Content-Type`(MediaType.application.json))
 
     val result =
       for
@@ -791,15 +1095,10 @@ class HttpServerSpec extends CatsEffectSuite:
         (registeredUserResponse, registeredUserId) <-
           assertUserPayload(registerResponse, "eve@example.com", "Eve")
         token = registeredUserResponse.user.token
-        updateRequest = Request[IO](
-          Method.PUT,
-          uri"/api/user",
-          headers = Headers(
-            Authorization(Credentials.Token(AuthScheme.Bearer, token)),
-            `Content-Type`(MediaType.application.json)
-          ),
-          body = Stream.emits(updatePayload.getBytes(StandardCharsets.UTF_8)).covary[IO]
-        )
+        updateRequest = Request[IO](Method.PUT, uri"/api/user")
+          .putHeaders(authHeader(token))
+          .withEntity(updatePayload)
+          .withContentType(`Content-Type`(MediaType.application.json))
         updateResponse <- httpApp.run(updateRequest)
         _ = assertEquals(updateResponse.status, Status.Ok)
         (updatedUserResponse, updatedUserId) <-
@@ -814,12 +1113,9 @@ class HttpServerSpec extends CatsEffectSuite:
         _ = assertEquals(updatedUserResponse.user.token, token)
         loginPayload =
           """{"user":{"email":"eve@conduit.example","password":"newsecret"}}"""
-        loginRequest = Request[IO](
-          Method.POST,
-          uri"/api/users/login",
-          headers = Headers(`Content-Type`(MediaType.application.json)),
-          body = Stream.emits(loginPayload.getBytes(StandardCharsets.UTF_8)).covary[IO]
-        )
+        loginRequest = Request[IO](Method.POST, uri"/api/users/login")
+          .withEntity(loginPayload)
+          .withContentType(`Content-Type`(MediaType.application.json))
         loginResponse <- httpApp.run(loginRequest)
         _ = assertEquals(loginResponse.status, Status.Ok)
         (loggedInUserResponse, loggedInUserId) <-
@@ -832,11 +1128,8 @@ class HttpServerSpec extends CatsEffectSuite:
           )
         _ = assertEquals(loggedInUserId, registeredUserId)
         _ = assertEquals(loggedInUserResponse.user.token, token)
-        profileRequest = Request[IO](
-          Method.GET,
-          uri"/api/profiles" / expectedUsername,
-          headers = Headers(Authorization(Credentials.Token(AuthScheme.Bearer, token)))
-        )
+        profileRequest = Request[IO](Method.GET, uri"/api/profiles" / expectedUsername)
+          .putHeaders(authHeader(token))
         profileResponse <- httpApp.run(profileRequest)
         _ = assertEquals(profileResponse.status, Status.Ok)
         _ <- assertProfilePayload(
