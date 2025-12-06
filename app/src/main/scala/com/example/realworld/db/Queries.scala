@@ -1,14 +1,17 @@
 package com.example.realworld.db
 
+import com.example.realworld.model.Article
 import com.example.realworld.model.ArticleId
+import com.example.realworld.model.ArticleSummary
+import com.example.realworld.model.Comment
 import com.example.realworld.model.CommentId
 import com.example.realworld.model.NewArticle
+import com.example.realworld.model.Profile
+import com.example.realworld.model.User
 import com.example.realworld.model.UserId
-import com.example.realworld.repository.ArticleFilters
-import com.example.realworld.repository.StoredArticle
-import com.example.realworld.repository.StoredComment
-import com.example.realworld.repository.StoredUser
+import com.example.realworld.service.ArticleFilters
 import doobie.Query0
+import doobie.Read
 import doobie.Update
 import doobie.Update0
 import doobie.implicits.*
@@ -18,6 +21,90 @@ import doobie.util.fragments.whereAndOpt
 import doobie.util.meta.Meta
 
 import java.time.Instant
+
+final case class StoredUser(
+    id: UserId,
+    email: String,
+    username: String,
+    bio: Option[String],
+    image: Option[String]
+) derives Read:
+  def toUser(token: String): User =
+    User(
+      email = email,
+      token = token,
+      username = username,
+      bio = bio,
+      image = image
+    )
+
+final case class StoredProfile(
+    user: StoredUser,
+    following: Boolean
+) derives Read:
+  def toProfile: Profile =
+    Profile(
+      username = user.username,
+      bio = user.bio,
+      image = user.image,
+      following = following
+    )
+
+final case class StoredArticle(
+    id: ArticleId,
+    slug: String,
+    title: String,
+    description: String,
+    body: String,
+    tagList: List[String],
+    favorited: Boolean,
+    favoritesCount: Int,
+    createdAt: Instant,
+    updatedAt: Instant,
+    author: StoredProfile
+) derives Read:
+  def toArticle: Article =
+    Article(
+      slug = slug,
+      title = title,
+      description = description,
+      body = body,
+      tagList = tagList,
+      createdAt = createdAt,
+      updatedAt = updatedAt,
+      favorited = favorited,
+      favoritesCount = favoritesCount,
+      author = author.toProfile
+    )
+
+  def toSummary: ArticleSummary =
+    ArticleSummary(
+      slug = slug,
+      title = title,
+      description = description,
+      tagList = tagList,
+      createdAt = createdAt,
+      updatedAt = updatedAt,
+      favorited = favorited,
+      favoritesCount = favoritesCount,
+      author = author.toProfile
+    )
+
+final case class StoredComment(
+    id: CommentId,
+    body: String,
+    createdAt: Instant,
+    updatedAt: Instant,
+    author: StoredProfile
+) derives Read:
+  def toComment: Comment =
+    Comment(
+      id = id,
+      createdAt = createdAt,
+      updatedAt = updatedAt,
+      body = body,
+      author = author.toProfile
+    )
 
 object Queries:
 

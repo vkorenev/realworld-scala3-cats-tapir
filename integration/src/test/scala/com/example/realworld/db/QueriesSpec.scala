@@ -6,7 +6,7 @@ import com.example.realworld.model.ArticleId
 import com.example.realworld.model.CommentId
 import com.example.realworld.model.NewArticle
 import com.example.realworld.model.UserId
-import com.example.realworld.repository.ArticleFilters
+import com.example.realworld.service.ArticleFilters
 import doobie.Transactor
 import doobie.munit.IOChecker
 import munit.CatsEffectSuite

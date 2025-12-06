@@ -15,9 +15,6 @@ import com.example.realworld.model.ProfileResponse
 import com.example.realworld.model.TagsResponse
 import com.example.realworld.model.UserId
 import com.example.realworld.model.UserResponse
-import com.example.realworld.repository.DoobieArticleRepository
-import com.example.realworld.repository.DoobieCommentRepository
-import com.example.realworld.repository.DoobieUserRepository
 import com.example.realworld.security.Pbkdf2PasswordHasher
 import com.example.realworld.service.ArticleService
 import com.example.realworld.service.CommentService
@@ -50,12 +47,10 @@ class HttpServerSpec extends CatsEffectSuite:
       container <- PostgresTestContainer.resource[IO](dbName)
       transactor <- Database.transactor[IO](TestDatabaseConfig.fromContainer(container))
       _ <- Resource.eval(Database.initialize[IO](transactor))
-      userRepository = DoobieUserRepository[IO](transactor, Pbkdf2PasswordHasher[IO]())
-      userService = UserService.live[IO](userRepository, authToken)
-      articleRepository = DoobieArticleRepository[IO](transactor)
-      articleService = ArticleService.live[IO](articleRepository)
-      commentRepository = DoobieCommentRepository[IO](transactor)
-      commentService = CommentService.live[IO](commentRepository)
+      passwordHasher = Pbkdf2PasswordHasher[IO]()
+      userService = UserService.live[IO](transactor, passwordHasher, authToken)
+      articleService = ArticleService.live[IO](transactor)
+      commentService = CommentService.live[IO](transactor)
     yield Endpoints[IO](userService, articleService, commentService, authToken).routes.orNotFound
   )
 

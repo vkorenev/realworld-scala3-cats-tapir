@@ -19,10 +19,10 @@ import com.example.realworld.model.UpdateArticleRequest
 import com.example.realworld.model.UpdateUserRequest
 import com.example.realworld.model.UserId
 import com.example.realworld.model.UserResponse
-import com.example.realworld.repository.ArticleFilters
-import com.example.realworld.repository.Pagination
+import com.example.realworld.service.ArticleFilters
 import com.example.realworld.service.ArticleService
 import com.example.realworld.service.CommentService
+import com.example.realworld.service.Pagination
 import com.example.realworld.service.UserService
 import org.http4s.HttpRoutes
 import sttp.model.StatusCode
