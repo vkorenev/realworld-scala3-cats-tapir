@@ -25,14 +25,20 @@ import com.example.realworld.service.CommentService
 import com.example.realworld.service.Pagination
 import com.example.realworld.service.UserService
 import org.http4s.HttpRoutes
+import org.typelevel.otel4s.metrics.Meter
+import org.typelevel.otel4s.trace.Tracer
+import sttp.capabilities.fs2.Fs2Streams
 import sttp.model.StatusCode
 import sttp.model.headers.WWWAuthenticateChallenge
 import sttp.tapir.*
 import sttp.tapir.json.jsoniter.*
+import sttp.tapir.server.ServerEndpoint
 import sttp.tapir.server.http4s.Http4sServerInterpreter
 import sttp.tapir.server.http4s.Http4sServerOptions
 import sttp.tapir.server.interceptor.cors.CORSConfig
 import sttp.tapir.server.interceptor.cors.CORSInterceptor
+import sttp.tapir.server.metrics.otel4s.Otel4sMetrics
+import sttp.tapir.server.tracing.otel4s.Otel4sTracing
 import sttp.tapir.swagger.bundle.SwaggerInterpreter
 
 case class Endpoints[F[_]: Async](
@@ -326,7 +332,7 @@ case class Endpoints[F[_]: Async](
     .tag("Tags")
     .serverLogicSuccess[F](_ => articleService.listTags.map(TagsResponse.apply))
 
-  def routes: HttpRoutes[F] =
+  def allEndpoints: List[ServerEndpoint[Fs2Streams[F], F]] =
     val serverEndpoints = List(
       livenessEndpoint,
       loginUserEndpoint,
@@ -353,8 +359,13 @@ case class Endpoints[F[_]: Async](
     val swaggerEndpoints =
       SwaggerInterpreter().fromServerEndpoints[F](serverEndpoints, "RealWorld Conduit API", "1.0.0")
 
+    serverEndpoints ++ swaggerEndpoints
+
+  def routes(meter: Meter[F], tracer: Tracer[F]): HttpRoutes[F] =
     val serverOptions = Http4sServerOptions.customiseInterceptors
       .corsInterceptor(CORSInterceptor.customOrThrow(CORSConfig.default.allowAllMethods))
+      .metricsInterceptor(Otel4sMetrics.default(meter).metricsInterceptor())
+      .prependInterceptor(Otel4sTracing(tracer))
       .options
 
-    Http4sServerInterpreter[F](serverOptions).toRoutes(serverEndpoints ++ swaggerEndpoints)
+    Http4sServerInterpreter[F](serverOptions).toRoutes(allEndpoints)

@@ -21,8 +21,10 @@ resource "google_project_service" "enabled" {
   for_each = toset([
     "artifactregistry",
     "cloudresourcemanager",
+    "cloudtrace",
     "iam",
     "iamcredentials",
+    "logging",
     "run",
     "secretmanager",
     "sts",
@@ -139,6 +141,7 @@ resource "google_secret_manager_secret" "cloud_run" {
   for_each = toset([
     "database-password",
     "jwt-secret-key",
+    "otel-collector-config"
   ])
 
   secret_id = each.value
@@ -162,10 +165,26 @@ resource "google_secret_manager_secret_version" "jwt_secret_key" {
   secret_data = random_password.jwt_secret_key.result
 }
 
+resource "google_secret_manager_secret_version" "otel_config" {
+  secret      = google_secret_manager_secret.cloud_run["otel-collector-config"].name
+  secret_data = file("${path.module}/otel-collector-config.yaml")
+}
+
 resource "google_secret_manager_secret_iam_member" "secret_access" {
   for_each = google_secret_manager_secret.cloud_run
 
   secret_id = each.value.id
   role      = "roles/secretmanager.secretAccessor"
   member    = google_service_account.cloud_run.member
+}
+
+resource "google_project_iam_member" "cloud_run" {
+  for_each = toset([
+    "roles/cloudtrace.agent",
+    "roles/logging.logWriter",
+  ])
+
+  project = var.gcp_project
+  role    = each.key
+  member  = google_service_account.cloud_run.member
 }

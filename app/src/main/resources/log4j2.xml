@@ -8,11 +8,13 @@
     <Console name="Console" target="SYSTEM_OUT">
       <PatternLayout pattern="${LOG_PATTERN}"/>
     </Console>
+    <OpenTelemetry name="OpenTelemetry" captureMapMessageAttributes="true" captureMarkerAttribute="true" captureContextDataAttributes="*"/>
   </Appenders>
 
   <Loggers>
-    <Root level="info">
-      <AppenderRef ref="Console"/>
+    <Root level="INFO">
+      <AppenderRef ref="Console" level="ALL"/>
+      <AppenderRef ref="OpenTelemetry" level="ALL"/>
     </Root>
   </Loggers>
 </Configuration>

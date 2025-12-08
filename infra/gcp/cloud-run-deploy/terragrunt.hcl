@@ -19,6 +19,5 @@ inputs = {
   database_host                   = dependency.db.outputs.database_host
   database_name                   = dependency.db.outputs.database_name
   database_username               = dependency.db.outputs.database_username
-  database_password_secret_name   = dependency.gcp.outputs.database_password_secret_name
-  jwt_secret_key_secret_name      = dependency.gcp.outputs.jwt_secret_key_secret_name
+  cloud_run_secret_names          = dependency.gcp.outputs.cloud_run_secret_names
 }

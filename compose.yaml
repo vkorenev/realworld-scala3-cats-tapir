@@ -6,8 +6,13 @@ services:
       DB_USERNAME: app
       DB_PASSWORD: ${DB_PASSWORD:-app_password}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-dev-secret-change-me}
+      OTEL_SERVICE_NAME: realworld-conduit-backend
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-lgtm:4317"
+      OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
     depends_on:
       postgres:
+        condition: service_healthy
+      otel-lgtm:
         condition: service_healthy
     ports:
       - "8080:8080"
@@ -30,5 +35,21 @@ services:
       retries: 5
     restart: unless-stopped
 
+  otel-lgtm:
+    image: grafana/otel-lgtm:0.12.0
+    container_name: otel-lgtm
+    ports:
+      - "3000:3000" # Grafana UI
+      - "4317:4317" # OTLP gRPC
+    volumes:
+      - otel_lgtm_data:/data
+    healthcheck:
+      test: cat /tmp/ready
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
 volumes:
   db-data: {}
+  otel_lgtm_data: {}

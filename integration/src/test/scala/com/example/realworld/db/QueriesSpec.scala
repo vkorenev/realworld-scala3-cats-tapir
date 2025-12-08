@@ -8,6 +8,7 @@ import com.example.realworld.model.NewArticle
 import com.example.realworld.model.UserId
 import com.example.realworld.service.ArticleFilters
 import doobie.Transactor
+import doobie.hikari.HikariTransactor
 import doobie.munit.IOChecker
 import munit.CatsEffectSuite
 
@@ -22,7 +23,7 @@ class QueriesSpec extends CatsEffectSuite with IOChecker:
     for
       dbName <- Resource.eval(IO(s"queries-${UUID.randomUUID().toString.replace("-", "")}"))
       container <- PostgresTestContainer.resource[IO](dbName)
-      xa <- Database.transactor[IO](TestDatabaseConfig.fromContainer(container))
+      xa <- HikariTransactor.fromConfig[IO](TestDatabaseConfig.fromContainer(container))
       _ <- Resource.eval(Database.initialize[IO](xa))
     yield xa
   )

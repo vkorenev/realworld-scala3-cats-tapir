@@ -20,6 +20,7 @@ import com.example.realworld.service.ArticleService
 import com.example.realworld.service.CommentService
 import com.example.realworld.service.UserService
 import com.github.plokhotnyuk.jsoniter_scala.core.readFromString
+import doobie.hikari.HikariTransactor
 import munit.CatsEffectSuite
 import org.http4s.AuthScheme
 import org.http4s.Credentials
@@ -33,6 +34,8 @@ import org.http4s.Uri
 import org.http4s.headers.Authorization
 import org.http4s.headers.`Content-Type`
 import org.http4s.implicits.*
+import org.typelevel.otel4s.metrics.Meter
+import org.typelevel.otel4s.trace.Tracer
 
 import java.time.Instant
 import java.util.UUID
@@ -40,18 +43,21 @@ import java.util.UUID
 class HttpServerSpec extends CatsEffectSuite:
   private val jwtSecret = "test-secret-key"
   private val authToken = JwtAuthToken[IO](jwtSecret)
+  private given Meter[IO] = Meter.noop[IO]
+  private given Tracer[IO] = Tracer.noop[IO]
   private val httpAppFixture = ResourceSuiteLocalFixture(
     "http-app",
     for
       dbName <- Resource.eval(IO(s"http-app-${UUID.randomUUID().toString.replace("-", "")}"))
       container <- PostgresTestContainer.resource[IO](dbName)
-      transactor <- Database.transactor[IO](TestDatabaseConfig.fromContainer(container))
+      transactor <- HikariTransactor.fromConfig[IO](TestDatabaseConfig.fromContainer(container))
       _ <- Resource.eval(Database.initialize[IO](transactor))
       passwordHasher = Pbkdf2PasswordHasher[IO]()
       userService = UserService.live[IO](transactor, passwordHasher, authToken)
       articleService = ArticleService.live[IO](transactor)
       commentService = CommentService.live[IO](transactor)
-    yield Endpoints[IO](userService, articleService, commentService, authToken).routes.orNotFound
+      endpoints = Endpoints[IO](userService, articleService, commentService, authToken)
+    yield endpoints.routes(summon[Meter[IO]], summon[Tracer[IO]]).orNotFound
   )
 
   override def munitFixtures = List(httpAppFixture)

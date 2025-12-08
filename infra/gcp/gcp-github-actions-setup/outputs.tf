@@ -3,12 +3,7 @@ output "cloud_run_service_account_email" {
   value       = google_service_account.cloud_run.email
 }
 
-output "database_password_secret_name" {
-  description = "Secret name for the database password"
-  value       = google_secret_manager_secret.cloud_run["database-password"].name
-}
-
-output "jwt_secret_key_secret_name" {
-  description = "Secret name for the JWT secret key"
-  value       = google_secret_manager_secret.cloud_run["jwt-secret-key"].name
+output "cloud_run_secret_names" {
+  description = "Secret names for Cloud Run service (secret_id => full_name)"
+  value       = { for id, secret in google_secret_manager_secret.cloud_run : id => secret.name }
 }

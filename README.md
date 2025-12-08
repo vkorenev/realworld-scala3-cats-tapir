@@ -12,6 +12,7 @@ For more information on how this works with other frontends/backends, head over 
 - Persistence: Doobie with PostgreSQL.
 - Serialization/config: Jsoniter-Scala for JSON, Pureconfig for typed config.
 - Auth: jwt-scala for JWT signing/verification.
+- Observability: OpenTelemetry with otel4s for metrics, tracing, and logs.
 - Testing: MUnit, Testcontainers for integration tests.
 - Packaging: Jib for container image builds.
 - Infrastructure: OpenTofu + Terragrunt; GCP Cloud Run deployment, Neon managed Postgres.
@@ -61,3 +62,5 @@ docker compose up -d
 ```
 
 The server will start on <http://localhost:8080>. Swagger UI is available at <http://localhost:8080/docs>.
+
+The Docker Compose setup includes [Grafana LGTM](https://github.com/grafana/docker-otel-lgtm) (Loki, Grafana, Tempo, Mimir) to collect metrics, traces, and logs from the application. Grafana UI is available at <http://localhost:3000> (default credentials: admin/admin)

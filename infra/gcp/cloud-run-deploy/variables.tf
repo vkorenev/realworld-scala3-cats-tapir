@@ -40,12 +40,13 @@ variable "database_username" {
   type        = string
 }
 
-variable "database_password_secret_name" {
-  description = "Secret name for the database password"
-  type        = string
+variable "cloud_run_secret_names" {
+  description = "Secret names for Cloud Run service (secret_id => full_name)"
+  type        = map(string)
 }
 
-variable "jwt_secret_key_secret_name" {
-  description = "Secret name for the JWT secret key"
+variable "otel_collector_image" {
+  description = "OpenTelemetry Collector image"
   type        = string
+  default     = "us-docker.pkg.dev/cloud-ops-agents-artifacts/google-cloud-opentelemetry-collector/otelcol-google:0.138.0"
 }

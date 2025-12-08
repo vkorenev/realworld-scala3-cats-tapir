@@ -2,6 +2,7 @@ package com.example.realworld
 
 import cats.effect.IO
 import cats.effect.IOApp
+import cats.effect.Resource
 import com.example.realworld.auth.JwtAuthToken
 import com.example.realworld.config.AppConfig
 import com.example.realworld.db.Database
@@ -9,21 +10,52 @@ import com.example.realworld.security.Pbkdf2PasswordHasher
 import com.example.realworld.service.ArticleService
 import com.example.realworld.service.CommentService
 import com.example.realworld.service.UserService
+import doobie.Transactor
+import doobie.hikari.HikariTransactor
+import doobie.otel4s.tracing.TraceTransactor
+import org.typelevel.otel4s.context.LocalProvider
+import org.typelevel.otel4s.oteljava.OtelJava
+import org.typelevel.otel4s.oteljava.context.Context
+import org.typelevel.otel4s.oteljava.context.IOLocalContextStorage
+
+import javax.sql.DataSource
 
 object Main extends IOApp.Simple:
+  private def traceTransactor(
+      hikariTransactor: HikariTransactor[IO],
+      otel4s: OtelJava[IO]
+  ): Transactor.Aux[IO, DataSource] =
+    TraceTransactor.fromDataSource[IO](
+      otel4s.underlying,
+      transactor = hikariTransactor.asInstanceOf[Transactor.Aux[IO, DataSource]]
+    )
+
   override def run: IO[Unit] =
+    given LocalProvider[IO, Context] = IOLocalContextStorage.localProvider[IO]
     val resources =
       for
-        appConfig <- cats.effect.Resource.eval(AppConfig.load[IO])
-        xa <- Database.transactor[IO](appConfig.database)
-        _ <- cats.effect.Resource.eval(Database.initialize[IO](xa))
+        otel4s <- OtelJava.autoConfigured[IO]()
+        _ <- Resource.eval(registerOpenTelemetryAppender[IO](otel4s))
+        _ <- registerRuntimeMetrics[IO](otel4s)
+        appConfig <- Resource.eval(AppConfig.load[IO])
+        xa <- HikariTransactor.fromConfig[IO](
+          appConfig.database,
+          metricsTrackerFactory = Some(hikariMetricsTrackerFactory(otel4s))
+        )
+        txa = traceTransactor(xa, otel4s)
+        _ <- Resource.eval(Database.initialize[IO](txa))
         authToken = JwtAuthToken[IO](appConfig.jwt.secretKey)
         passwordHasher = Pbkdf2PasswordHasher[IO]()
-        userService = UserService.live[IO](xa, passwordHasher, authToken)
-        articleService = ArticleService.live[IO](xa)
-        commentService = CommentService.live[IO](xa)
+        userService = UserService.live[IO](txa, passwordHasher, authToken)
+        articleService = ArticleService.live[IO](txa)
+        commentService = CommentService.live[IO](txa)
+        meter <- Resource.eval(otel4s.meterProvider.get("realworld-app"))
+        tracer <- Resource.eval(otel4s.tracerProvider.get("realworld-app"))
         server <- HttpServer(
-          Endpoints[IO](userService, articleService, commentService, authToken)
+          Endpoints[IO](userService, articleService, commentService, authToken).routes(
+            meter,
+            tracer
+          )
         ).resource
       yield server
 

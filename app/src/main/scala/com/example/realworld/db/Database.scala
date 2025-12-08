@@ -1,16 +1,10 @@
 package com.example.realworld.db
 
 import cats.effect.Async
-import cats.effect.Resource
-import doobie.hikari.Config as HikariConfig
-import doobie.hikari.HikariTransactor
 import doobie.implicits.*
 import doobie.util.transactor.Transactor
 
 object Database:
-  def transactor[F[_]: Async](config: HikariConfig): Resource[F, Transactor[F]] =
-    HikariTransactor.fromConfig[F](config)
-
   def initialize[F[_]: Async](xa: Transactor[F]): F[Unit] =
     (for
       _ <-
