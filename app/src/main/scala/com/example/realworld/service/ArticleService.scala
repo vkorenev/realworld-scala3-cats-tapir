@@ -79,7 +79,7 @@ final class LiveArticleService[F[_]: Async](xa: Transactor[F]) extends ArticleSe
   override def create(authorId: UserId, article: NewArticle): F[Article] =
     for
       at <- Async[F].realTimeInstant
-      stored <- {
+      stored <-
         val baseSlug = slugify(article.title)
         val sanitizedTags = article.tagList
           .getOrElse(Nil)
@@ -109,7 +109,6 @@ final class LiveArticleService[F[_]: Async](xa: Transactor[F]) extends ArticleSe
           updatedAt = at,
           author = StoredProfile(authorUser, following = false)
         )).transact(xa)
-      }
     yield stored.toArticle
 
   override def list(
