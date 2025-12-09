@@ -14,9 +14,11 @@ import doobie.Transactor
 import doobie.hikari.HikariTransactor
 import doobie.otel4s.tracing.TraceTransactor
 import org.typelevel.otel4s.context.LocalProvider
+import org.typelevel.otel4s.metrics.Meter
 import org.typelevel.otel4s.oteljava.OtelJava
 import org.typelevel.otel4s.oteljava.context.Context
 import org.typelevel.otel4s.oteljava.context.IOLocalContextStorage
+import org.typelevel.otel4s.trace.Tracer
 
 import javax.sql.DataSource
 
@@ -30,11 +32,15 @@ object Main extends IOApp.Simple:
       transactor = hikariTransactor.asInstanceOf[Transactor.Aux[IO, DataSource]]
     )
 
+  private val telemetryScopeName = "com.example.realworld.backend"
+
   override def run: IO[Unit] =
     given LocalProvider[IO, Context] = IOLocalContextStorage.localProvider[IO]
     val resources =
       for
         otel4s <- OtelJava.autoConfigured[IO]()
+        given Meter[IO] <- Resource.eval(otel4s.meterProvider.get(telemetryScopeName))
+        given Tracer[IO] <- Resource.eval(otel4s.tracerProvider.get(telemetryScopeName))
         _ <- Resource.eval(registerOpenTelemetryAppender[IO](otel4s))
         _ <- registerRuntimeMetrics[IO](otel4s)
         appConfig <- Resource.eval(AppConfig.load[IO])
@@ -49,14 +55,8 @@ object Main extends IOApp.Simple:
         userService = UserService.live[IO](txa, passwordHasher, authToken)
         articleService = ArticleService.live[IO](txa)
         commentService = CommentService.live[IO](txa)
-        meter <- Resource.eval(otel4s.meterProvider.get("realworld-app"))
-        tracer <- Resource.eval(otel4s.tracerProvider.get("realworld-app"))
-        server <- HttpServer(
-          Endpoints[IO](userService, articleService, commentService, authToken).routes(
-            meter,
-            tracer
-          )
-        ).resource
+        endpoints = Endpoints[IO](userService, articleService, commentService, authToken)
+        server <- HttpServer(routes(endpoints)).resource
       yield server
 
     resources.useForever

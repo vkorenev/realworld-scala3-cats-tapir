@@ -57,7 +57,7 @@ class HttpServerSpec extends CatsEffectSuite:
       articleService = ArticleService.live[IO](transactor)
       commentService = CommentService.live[IO](transactor)
       endpoints = Endpoints[IO](userService, articleService, commentService, authToken)
-    yield endpoints.routes(summon[Meter[IO]], summon[Tracer[IO]]).orNotFound
+    yield routes(endpoints).orNotFound
   )
 
   override def munitFixtures = List(httpAppFixture)
