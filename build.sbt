@@ -48,6 +48,13 @@ val jvmOptions = List(
   "-Djava.util.logging.manager=org.apache.logging.log4j.jul.LogManager"
 )
 
+val scalaCompilerOptions = Seq(
+  "-Wsafe-init",
+  "-Wunused:all",
+  "-Xmax-inlines:64",
+  "-source:3.7-migration"
+)
+
 lazy val app = (project in file("app"))
   .settings(
     log4j2Bom,
@@ -102,12 +109,7 @@ lazy val app = (project in file("app"))
     jibName := projectName,
     jibTags += "latest",
     testFrameworks += new TestFramework("munit.Framework"),
-    scalacOptions ++= Seq(
-      "-Wsafe-init",
-      "-Wunused:all",
-      "-source:3.7-migration",
-      "-Xmax-inlines:64"
-    )
+    scalacOptions ++= scalaCompilerOptions
   )
 
 lazy val integration = (project in file("integration"))
@@ -126,12 +128,7 @@ lazy val integration = (project in file("integration"))
     Test / fork := true,
     javaOptions ++= jvmOptions,
     testFrameworks += new TestFramework("munit.Framework"),
-    scalacOptions ++= Seq(
-      "-Wsafe-init",
-      "-Wunused:all",
-      "-source:3.7-migration",
-      "-Xmax-inlines:64"
-    )
+    scalacOptions ++= scalaCompilerOptions
   )
 
 lazy val root = (project in file("."))
