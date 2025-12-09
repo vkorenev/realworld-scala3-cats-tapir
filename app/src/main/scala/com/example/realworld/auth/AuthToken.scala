@@ -7,6 +7,8 @@ import com.github.plokhotnyuk.jsoniter_scala.core.JsonValueCodec
 import com.github.plokhotnyuk.jsoniter_scala.core.readFromString
 import com.github.plokhotnyuk.jsoniter_scala.core.writeToString
 import com.github.plokhotnyuk.jsoniter_scala.macros.JsonCodecMaker
+import org.typelevel.otel4s.Attribute
+import org.typelevel.otel4s.trace.Tracer
 import pdi.jwt.Jwt
 import pdi.jwt.JwtAlgorithm
 import pdi.jwt.JwtClaim
@@ -15,25 +17,32 @@ trait AuthToken[F[_]]:
   def issue(userId: UserId): F[String]
   def resolve(token: String): F[UserId]
 
-final case class JwtAuthToken[F[_]: MonadThrow](secretKey: String) extends AuthToken[F]:
+final case class JwtAuthToken[F[_]: {MonadThrow, Tracer}](secretKey: String) extends AuthToken[F]:
   import JwtAuthToken.*
 
   override def issue(userId: UserId): F[String] =
-    MonadThrow[F].catchNonFatal {
-      val claim = JwtClaim(content = writeToString(TokenPayload(UserId.value(userId))))
-      Jwt.encode(claim, secretKey, Algorithm)
+    Tracer[F].span("issue-auth-token", Attribute("user.id", UserId.value(userId))).use { _ =>
+      MonadThrow[F].catchNonFatal {
+        val claim = JwtClaim(content = writeToString(TokenPayload(UserId.value(userId))))
+        Jwt.encode(claim, secretKey, Algorithm)
+      }
     }
 
   override def resolve(token: String): F[UserId] =
-    MonadThrow[F]
-      .fromTry(
-        Jwt.decode(token, secretKey, Seq(Algorithm))
-      )
-      .flatMap { claim =>
-        MonadThrow[F].catchNonFatal {
-          UserId(readFromString[TokenPayload](claim.content).userId)
+    Tracer[F].span("resolve-auth-token").use { span =>
+      MonadThrow[F]
+        .fromTry(
+          Jwt.decode(token, secretKey, Seq(Algorithm))
+        )
+        .flatMap { claim =>
+          MonadThrow[F].catchNonFatal {
+            UserId(readFromString[TokenPayload](claim.content).userId)
+          }
         }
-      }
+        .flatTap { userId =>
+          span.addAttribute(Attribute("user.id", UserId.value(userId)))
+        }
+    }
 
 object JwtAuthToken:
   private val Algorithm = JwtAlgorithm.HS256

@@ -29,7 +29,8 @@ object Main extends IOApp.Simple:
   ): Transactor.Aux[IO, DataSource] =
     TraceTransactor.fromDataSource[IO](
       otel4s.underlying,
-      transactor = hikariTransactor.asInstanceOf[Transactor.Aux[IO, DataSource]]
+      transactor = hikariTransactor.asInstanceOf[Transactor.Aux[IO, DataSource]],
+      transactionInstrumenterEnabled = true
     )
 
   private val telemetryScopeName = "com.example.realworld.backend"
