@@ -10,7 +10,7 @@ ThisBuild / tpolecatDefaultOptionsMode := {
 ThisBuild / organization := "com.example.realworld"
 ThisBuild / organizationName := "Example"
 ThisBuild / version := sys.env.getOrElse("PROJECT_VERSION", "0.0.0-LOCAL-SNAPSHOT")
-ThisBuild / scalaVersion := "3.7.4"
+ThisBuild / scalaVersion := "3.8.1"
 ThisBuild / semanticdbEnabled := true
 ThisBuild / semanticdbVersion := scalafixSemanticdb.revision
 
@@ -21,15 +21,15 @@ val http4sVersion = "0.23.33"
 val log4j2Version = "2.25.3"
 val openTelemetryVersion = "1.57.0"
 val openTelemetryInstrumentationVersion = "2.23.0"
-val otel4sVersion = "0.14.0"
-val otel4sDoobieVersion = "0.10.0"
-val pureconfigVersion = "0.17.9"
-val tapirVersion = "1.13.3"
-val jsoniterScalaVersion = "2.38.6"
+val otel4sVersion = "0.15.0"
+val otel4sDoobieVersion = "0.11.0"
+val pureconfigVersion = "0.17.10"
+val tapirVersion = "1.13.6"
+val jsoniterScalaVersion = "2.38.8"
 val doobieVersion = "1.0.0-RC11"
-val postgresVersion = "42.7.8"
+val postgresVersion = "42.7.9"
 val jwtScalaVersion = "11.0.3"
-val munitVersion = "1.2.1"
+val munitVersion = "1.2.2"
 val munitCatsEffectVersion = "2.1.0"
 val testcontainersScalaVersion = "0.44.1"
 
@@ -113,9 +113,11 @@ lazy val app = (project in file("app"))
   )
 
 lazy val integration = (project in file("integration"))
-  .dependsOn(app % "compile->compile;test->test")
+  .dependsOn(app % "compile->compile;test->test;runtime->runtime")
   .settings(
-    log4j2Bom
+    log4j2Bom,
+    openTelemetryBom,
+    openTelemetryInstrumentationBomAlpha
   )
   .settings(
     publish / skip := true,
@@ -123,7 +125,9 @@ lazy val integration = (project in file("integration"))
       "com.dimafeng" %% "testcontainers-scala-munit" % testcontainersScalaVersion % Test,
       "com.dimafeng" %% "testcontainers-scala-postgresql" % testcontainersScalaVersion % Test
     ),
-    dependencyOverrides ++= log4j2Bom.key.value.bomDependencies,
+    dependencyOverrides ++= log4j2Bom.key.value.bomDependencies ++
+      openTelemetryBom.key.value.bomDependencies ++
+      openTelemetryInstrumentationBomAlpha.key.value.bomDependencies,
     Compile / run / fork := true,
     Test / fork := true,
     javaOptions ++= jvmOptions,
