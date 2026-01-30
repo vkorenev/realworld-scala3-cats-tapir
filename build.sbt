@@ -7,6 +7,8 @@ ThisBuild / tpolecatDefaultOptionsMode := {
   else
     org.typelevel.sbt.tpolecat.DevMode
 }
+// Workaround for https://github.com/typelevel/sbt-tpolecat/issues/291
+ThisBuild / tpolecatExcludeOptions += org.typelevel.scalacoptions.ScalacOptions.fatalWarnings
 ThisBuild / organization := "com.example.realworld"
 ThisBuild / organizationName := "Example"
 ThisBuild / version := sys.env.getOrElse("PROJECT_VERSION", "0.0.0-LOCAL-SNAPSHOT")
@@ -53,6 +55,12 @@ val scalaCompilerOptions = Seq(
   "-Wunused:all",
   "-Xmax-inlines:64",
   "-source:3.7-migration"
+) ++ (
+  // Workaround for https://github.com/typelevel/sbt-tpolecat/issues/291
+  if (isRunningInCi)
+    Seq("-Werror")
+  else
+    Seq.empty
 )
 
 lazy val app = (project in file("app"))
