@@ -10,7 +10,7 @@ jobs:
       - name: Set up SBT Cache
         uses: coursier/cache-action@v7
       - name: Install SDKs and Tools
-        uses: jdx/mise-action@v3
+        uses: jdx/mise-action@v4
       - name: Build and Test
         run: sbt "scalafmtCheckAll; scalafixAll --check; coverage; test; coverageReport"
       - name: Upload Test Coverage Report
