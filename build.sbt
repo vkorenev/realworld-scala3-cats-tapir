@@ -12,7 +12,7 @@ ThisBuild / tpolecatExcludeOptions += org.typelevel.scalacoptions.ScalacOptions.
 ThisBuild / organization := "com.example.realworld"
 ThisBuild / organizationName := "Example"
 ThisBuild / version := sys.env.getOrElse("PROJECT_VERSION", "0.0.0-LOCAL-SNAPSHOT")
-ThisBuild / scalaVersion := "3.8.1"
+ThisBuild / scalaVersion := "3.8.3"
 ThisBuild / semanticdbEnabled := true
 ThisBuild / semanticdbVersion := scalafixSemanticdb.revision
 
