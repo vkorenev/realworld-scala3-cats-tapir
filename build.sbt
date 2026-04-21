@@ -7,8 +7,6 @@ ThisBuild / tpolecatDefaultOptionsMode := {
   else
     org.typelevel.sbt.tpolecat.DevMode
 }
-// Workaround for https://github.com/typelevel/sbt-tpolecat/issues/291
-ThisBuild / tpolecatExcludeOptions += org.typelevel.scalacoptions.ScalacOptions.fatalWarnings
 ThisBuild / organization := "com.example.realworld"
 ThisBuild / organizationName := "Example"
 ThisBuild / version := sys.env.getOrElse("PROJECT_VERSION", "0.0.0-LOCAL-SNAPSHOT")
@@ -22,7 +20,7 @@ val fs2Version = "3.13.0"
 val http4sVersion = "0.23.34"
 val log4j2Version = "2.25.4"
 val openTelemetryVersion = "1.60.1"
-val openTelemetryInstrumentationVersion = "2.23.0"
+val openTelemetryInstrumentationVersion = "2.26.1"
 val otel4sVersion = "0.15.2"
 val otel4sDoobieVersion = "0.12.0"
 val pureconfigVersion = "0.17.10"
@@ -46,21 +44,15 @@ lazy val openTelemetryInstrumentationBomAlpha = com.here.bom.Bom(
 )
 
 val jvmOptions = List(
-  "-Dcats.effect.trackFiberContext=true",
-  "-Djava.util.logging.manager=org.apache.logging.log4j.jul.LogManager"
+  "-Dcats.effect.trackFiberContext=true"
+  // "-Djava.util.logging.manager=org.apache.logging.log4j.jul.LogManager"
 )
 
 val scalaCompilerOptions = Seq(
   "-Wsafe-init",
   "-Wunused:all",
   "-Xmax-inlines:64",
-  "-source:3.7-migration"
-) ++ (
-  // Workaround for https://github.com/typelevel/sbt-tpolecat/issues/291
-  if (isRunningInCi)
-    Seq("-Werror")
-  else
-    Seq.empty
+  "-source:3.8-migration"
 )
 
 lazy val app = (project in file("app"))
