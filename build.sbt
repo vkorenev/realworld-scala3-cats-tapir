@@ -19,12 +19,12 @@ val catsEffectVersion = "3.7.0"
 val fs2Version = "3.13.0"
 val http4sVersion = "0.23.34"
 val log4j2Version = "2.25.4"
-val openTelemetryVersion = "1.60.1"
-val openTelemetryInstrumentationVersion = "2.26.1"
-val otel4sVersion = "0.15.2"
-val otel4sDoobieVersion = "0.12.0"
+val openTelemetryVersion = "1.61.0"
+val openTelemetryInstrumentationVersion = "2.27.0"
+val otel4sVersion = "1.0.0-RC1"
+val otel4sDoobieVersion = "0.14.0"
 val pureconfigVersion = "0.17.10"
-val tapirVersion = "1.13.16"
+val tapirVersion = "1.13.17"
 val jsoniterScalaVersion = "2.38.9"
 val doobieVersion = "1.0.0-RC12"
 val postgresVersion = "42.7.10"
@@ -44,8 +44,8 @@ lazy val openTelemetryInstrumentationBomAlpha = com.here.bom.Bom(
 )
 
 val jvmOptions = List(
-  "-Dcats.effect.trackFiberContext=true"
-  // "-Djava.util.logging.manager=org.apache.logging.log4j.jul.LogManager"
+  "-Dcats.effect.trackFiberContext=true",
+  "-Djava.util.logging.manager=org.apache.logging.log4j.jul.LogManager"
 )
 
 val scalaCompilerOptions = Seq(
